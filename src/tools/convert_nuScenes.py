@@ -50,8 +50,8 @@ USED_SENSOR=['LIDAR_TOP', 'RADAR_FRONT', 'RADAR_FRONT_LEFT',
 CATS = ['car', 'truck', 'bus', 'trailer', 'construction_vehicle', 
         'pedestrian', 'motorcycle', 'bicycle', 'traffic_cone', 'barrier']
 CAT_IDS = {v: i + 1 for i, v in enumerate(CATS)}
-NUM_SWEEPS_LIDAR = 5
-NUM_SWEEPS_RADAR = 4
+NUM_SWEEPS_LIDAR = 10
+NUM_SWEEPS_RADAR = 6
 
 #suffix1 = '_{}sweeps'.format(NUM_SWEEPS) if NUM_SWEEPS > 1 else ''
 #OUT_PATH = OUT_PATH + suffix1 + '/'
@@ -64,8 +64,8 @@ ATTRIBUTE_TO_ID = {
   'pedestrian.sitting_lying_down': 5,
   'vehicle.moving': 6, 'vehicle.parked': 7, 
   'vehicle.stopped': 8}
-side_range=(-30, 30) 
-fwd_range=(-30, 30)
+side_range=(-40, 40) 
+fwd_range=(-40, 40)
 height_range = (-1.5,2.5)
 res_height=0.5
 res_wl = 0.5
