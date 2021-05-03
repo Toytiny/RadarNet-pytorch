@@ -18,6 +18,11 @@ from header import Header
 import numpy as np
 import cv2
 
+def softmax(x):
+    x_exp = torch.exp(x)
+    x_sum = torch.sum(x_exp)
+    s = x_exp / x_sum    
+    return s
 
 def NMS(boxes,scores,iou_threshold,max_detection):
     
@@ -90,3 +95,65 @@ def NMS(boxes,scores,iou_threshold,max_detection):
             
     return boxes[:N], scores[:N]      
 
+def late_fusion(car_det,radar_target,center_x,center_y,MLPNet,device):
+    refined_vels_car=torch.zeros((car_det.size()[0],2))
+        
+    for k in range(0,car_det.size()[0]):
+                
+        car_asso=torch.zeros((radar_target.size()[0],10)).to(device)
+        car_scores=torch.zeros(radar_target.size()[0]+1).to(device)
+                
+                
+        car_asso[:,0]=car_det[k,3]
+        car_asso[:,1]=car_det[k,4]
+        car_asso[:,2]=torch.sqrt(car_det[k,6]*car_det[k,6]+car_det[k,7]*car_det[k,7])
+        car_asso[:,3]=car_det[k,6]/car_asso[:,2]
+        car_asso[:,4]=car_det[k,7]/car_asso[:,2]
+        
+        car_asso[:,5]=torch.cos(torch.atan((car_det[k,1]-center_x)/(center_y-car_det[k,2]))+\
+                     torch.atan(car_det[k,6]/car_det[k,7]))
+        car_asso[:,6]=car_det[k,1]-radar_target[:,0]
+        car_asso[:,7]=car_det[k,2]-radar_target[:,1]
+        car_asso[:,8]=radar_target[:,4]
+                
+        beta=torch.atan((center_y-car_det[k,2])/(car_det[k,1]-center_x))-\
+                    torch.atan((center_y-radar_target[:,1])/(radar_target[:,0]-center_x))
+        car_asso[:,9]=radar_target[:,2]/torch.cos(torch.acos(car_asso[:,5])+beta)
+        for j in range(0,car_scores.size()[0]-1):
+            if car_asso[j,9]>50:
+                car_asso[j,9]=50
+                    
+                
+        for j in range(0,car_scores.size()[0]-1):
+            car_scores[j]=MLPNet(car_asso[j,:])
+                    
+        # Velocity Aggregation for car
+        car_scores[-1]=1
+        car_scores_norm=softmax(car_scores)
+        velo_cand=torch.cat((car_asso[:,9],car_asso[0,2].reshape(1))).t()
+        mag_refined=torch.sum(car_scores*velo_cand)
+        velo_refined=mag_refined*torch.cat((car_asso[0,3].reshape(1),car_asso[0,4].reshape(1)))
+                
+        refined_vels_car[k,:]=velo_refined
+ 
+    return refined_vels_car         
+            
+def get_detection_label(car_det,gt_car,device):
+    det_label=torch.zeros(car_det.size()[0])
+    for i in range(0,car_det.size()[0]):
+        for j in range(0,gt_car.size()[0]):
+            area=car_det[i,3]*car_det[i,4]
+            tarea=gt_car[j,2]*gt_car[j,3]
+            int_pts = cv2.rotatedRectangleIntersection(((car_det[i,1], car_det[i,2]), (car_det[i,3], car_det[i,4]), \
+                            car_det[i,5]), ((gt_car[j,0], gt_car[j,1]), (gt_car[j,2], gt_car[j,3]), gt_car[j,4]*180/3.14))[1]
+            if int_pts is not None:
+                order_pts = cv2.convexHull(int_pts, returnPoints=True)
+                int_area  = cv2.contourArea(order_pts)
+                inter     = int_area * 1.0 / (tarea + area - int_area + EPSILON)  # compute IoU 
+            else:
+                inter = 0
+                
+            if inter>0.5:
+                det_label=1
+                break
+    return det_label.to(device)

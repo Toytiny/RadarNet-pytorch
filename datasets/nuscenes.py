@@ -54,5 +54,15 @@ class nuScenes(Dataset.Dataset):
         input_target[i,3]=radar_target[i]['motion']
         input_target[i,4]=radar_target[i]['time']
         
-    
-    return annos, input_voxel, input_target
+    gt_car=[]
+    gt_moc=[]
+    for i in range(0,len(annos)):
+        if annos[i]['category_id']==1:
+            gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
+                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1]])
+        if annos[i]['category_id']==7:
+            gt_moc.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
+                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1]])
+    gt_car=np.array(gt_car)
+    gt_moc=np.array(gt_moc)
+    return gt_car,gt_moc, input_voxel, input_target

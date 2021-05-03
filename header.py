@@ -24,7 +24,8 @@ class Header(nn.Module):
             Conv3x3ReLU(in_channels=128, out_channels=128),
             Conv3x3ReLU(in_channels=128, out_channels=128),
             Conv3x3ReLU(in_channels=128, out_channels=128),
-            nn.Conv2d(in_channels=128, out_channels=2, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=128, out_channels=1, kernel_size=3, stride=1, padding=1),
+            nn.Sigmoid()
         )
         
         self.reg_layer=nn.Sequential(
@@ -32,7 +33,7 @@ class Header(nn.Module):
             Conv3x3ReLU(in_channels=128, out_channels=128),
             Conv3x3ReLU(in_channels=128, out_channels=128),
             Conv3x3ReLU(in_channels=128, out_channels=128),
-            nn.Conv2d(in_channels=128, out_channels=18, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=128, out_channels=9, kernel_size=3, stride=1, padding=1),
         )
     def forward(self,x):
         confs=self.cls_layer(x)
