@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from torchsummary import summary
+import torch.optim as optim
 from torch.autograd import Variable
 from logger import Logger
 import json
@@ -20,7 +21,9 @@ from datasets.nuscenes import nuScenes
 from backbone import Backbone
 from header import Header
 from mlp import MLP
-from utils import NMS, softmax, late_fusion, get_detection_label
+from utils import NMS, softmax, late_fusion
+from loss import detection_cls_loss, detection_reg_loss, velocity_cls_loss,velocity_reg_loss,refined_reg_loss
+from label import get_tp_label, get_positive_label
 import numpy as np
 import cv2
  
@@ -44,6 +47,14 @@ def main(opt):
     Header_car=Header().to(device)
     Header_moc=Header().to(device)       
     MLPNet=MLP().to(device)
+    
+    print('Creating Optimizer...')
+    
+    optimizer_b = optim.Adam(BBNet.parameters(), lr=1e-3)
+    optimizer_hc= optim.Adam(Header_car.parameters(), lr=1e-3)
+    optimizer_hm= optim.Adam(Header_moc.parameters(), lr=1e-3)
+    optimizer_mlp=optim.Adam(MLPNet.parameters(),lr=1e-3)
+    
     
     data_path="/home/toytiny/Desktop/RadarNet/data/nuscenes/"
     
@@ -98,6 +109,11 @@ def main(opt):
             reg_car=reg_car.reshape((reg_car.size()[1:4]))
             reg_moc=reg_moc.reshape((reg_moc.size()[1:4]))
             
+            # Apply sigmoid for confidence score
+            cls_car=torch.sigmoid(cls_car)
+            cls_moc=torch.sigmoid(cls_moc)
+            reg_car[6]=torch.sigmoid(reg_car[6])
+            reg_moc[6]=torch.sigmoid(reg_moc[6])
             # Add the voxel center value
             for i in range(0,reg_car.size()[0]):
                 for j in range(0,reg_moc.size()[1]):
@@ -108,10 +124,12 @@ def main(opt):
             
             
             # Prepare the input for NMS
-            car_boxes=torch.cat((reg_car[:4],(torch.atan(reg_car[5]/reg_car[4])*180/3.14)\
-                                 .reshape(1,reg_car.size()[1],reg_car.size()[2]),reg_car[7:9]),dim=0)
-            moc_boxes=torch.cat((reg_moc[:4],(torch.atan(reg_moc[5]/reg_moc[4])*180/3.14)\
-                                 .reshape(1,reg_moc.size()[1],reg_moc.size()[2]),reg_moc[7:9]),dim=0)
+            car_boxes=torch.cat((reg_car[:4],(torch.atan(reg_car[5]/reg_car[4]))\
+                                 .reshape(1,reg_car.size()[1],reg_car.size()[2])\
+                                 ,reg_car[7:9],reg_car[6].reshape(1,reg_car.size()[1],reg_car.size()[2])),dim=0)
+            moc_boxes=torch.cat((reg_moc[:4],(torch.atan(reg_moc[5]/reg_moc[4]))\
+                                 .reshape(1,reg_moc.size()[1],reg_moc.size()[2])\
+                                ,reg_moc[7:9],reg_car[6].reshape(1,reg_car.size()[1],reg_car.size()[2])),dim=0)
             
             car_boxes=car_boxes.reshape(car_boxes.size()[0],car_boxes.size()[1]*car_boxes.size()[2]).t()
             moc_boxes=moc_boxes.reshape(moc_boxes.size()[0],moc_boxes.size()[1]*moc_boxes.size()[2]).t()
@@ -124,7 +142,7 @@ def main(opt):
             moc_boxes,moc_scores=NMS(moc_boxes,moc_scores,0.5,200)
           
             # Early output detections 
-            # c,x,y,w,l,theta,v_x,v_y
+            # c,x,y,w,l,theta,v_x,v_y,m
             car_det=torch.cat((car_scores.reshape(car_scores.size()[0],1),car_boxes),dim=1)
             moc_det=torch.cat((moc_scores.reshape(moc_scores.size()[0],1),moc_boxes),dim=1)
             
@@ -136,18 +154,38 @@ def main(opt):
             refined_vels_moc=late_fusion(moc_det,radar_target,center_x,center_y,MLPNet,device)
             
             
-            # Getting the label for car potitive detection
-            det_label_car=get_detection_label(car_det,gt_car,device)
-            det_label_moc=get_detection_label(moc_det,gt_moc,device)
+            # Getting the truth positive sample label for loss calculation  IoU>0.5 and confidence>0.5
+            tp_label_car=get_tp_label(car_det,gt_car,device)
+            tp_label_moc=get_tp_label(moc_det,gt_moc,device) 
+
+            # Getting the positive sample label for loss calculation IoU>0.9 -> 1 IoU<0.4 -> 0 others -1
+            p_label_car=get_positive_label(car_det,gt_car,device)
+            p_label_moc=get_positive_label(moc_det,gt_moc,device)                                                                   
+                                                                      
+            # Calculate the cross entropy loss for detection classification 
+            loss_det_cls=detection_cls_loss(car_det,moc_det,p_label_car,p_label_moc)
+                                                                                      
+            # Calculate the smooth L1 loss for detection regression on positive sample
+            loss_det_reg=detection_reg_loss(car_det,moc_det,p_label_car,p_label_moc,gt_car,gt_moc)
             
-            # Calculate the cross entropy loss for detection classification  
-            loss_det_cls=-torch.sum(det_label_car*torch.log(car_det[:,0])+(1-det_label_car)* 
-                        torch.log(1-car_det[:,0]))/car_det.size()[0]-torch.sum(det_label_moc*torch.log(moc_det[:,0]) 
-                      +(1-det_label_moc)*torch.log(1-moc_det[:,0]))/moc_det.size()[0]
-              
-                
-                
-                
+            # Calculate the cross entropy loss for velocity classification on positive samples
+            loss_vel_cls=velocity_cls_loss(car_det,moc_det,p_label_car,p_label_moc,gt_car,gt_moc)
+            
+            # Calculate the smooth L1 loss for velocity regression on positive samples
+            loss_vel_reg=velocity_reg_loss(car_det,moc_det,p_label_car,p_label_moc,gt_car,gt_moc)
+            
+            # Calculate the smooth L1 loss for refined velocity regression on true positive samples
+            loss_ref_reg=refined_reg_loss(refined_vels_car,refined_vels_moc,tp_label_car,tp_label_moc,gt_car,gt_moc)
+            
+            loss_sum=loss_det_cls+loss_det_reg+0.1*loss_vel_cls+0.1*loss_vel_reg+0.1*loss_ref_reg
+            
+            # Back Propagation and parameter update
+            loss_sum.backward()
+            
+            optimizer_b.step()
+            optimizer_hc.step()
+            optimizer_hm.step()
+            optimizer_mlp.step()
             
 if __name__ == '__main__':
   opt = opts().parse()

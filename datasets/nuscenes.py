@@ -58,11 +58,20 @@ class nuScenes(Dataset.Dataset):
     gt_moc=[]
     for i in range(0,len(annos)):
         if annos[i]['category_id']==1:
-            gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
-                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1]])
+            if annos[i]['attributes']==6:
+                gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
+                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],1])
+            else:
+                gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
+                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],0])  
+                
         if annos[i]['category_id']==7:
-            gt_moc.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
-                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1]])
+            if annos[i]['attributes']==1:
+                gt_moc.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
+                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],1])
+            else:
+                gt_moc.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
+                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],0])
     gt_car=np.array(gt_car)
     gt_moc=np.array(gt_moc)
     return gt_car,gt_moc, input_voxel, input_target

@@ -71,7 +71,8 @@ def NMS(boxes,scores,iou_threshold,max_detection):
             score = scores[pos]
             area  = box[2] * box[3]
             try:
-                int_pts = cv2.rotatedRectangleIntersection(((tbox[0], tbox[1]), (tbox[2], tbox[3]), tbox[4]), ((box[0], box[1]), (box[2], box[3]), box[4]))[1]
+                int_pts = cv2.rotatedRectangleIntersection(((tbox[0], tbox[1]), (tbox[2], tbox[3]), tbox[4]*180/3.14), \
+                                                           ((box[0], box[1]), (box[2], box[3]), box[4]*180/3.14))[1]
                 if int_pts is not None:
                     order_pts = cv2.convexHull(int_pts, returnPoints=True)
                     int_area  = cv2.contourArea(order_pts)
@@ -137,23 +138,5 @@ def late_fusion(car_det,radar_target,center_x,center_y,MLPNet,device):
         refined_vels_car[k,:]=velo_refined
  
     return refined_vels_car         
-            
-def get_detection_label(car_det,gt_car,device):
-    det_label=torch.zeros(car_det.size()[0])
-    for i in range(0,car_det.size()[0]):
-        for j in range(0,gt_car.size()[0]):
-            area=car_det[i,3]*car_det[i,4]
-            tarea=gt_car[j,2]*gt_car[j,3]
-            int_pts = cv2.rotatedRectangleIntersection(((car_det[i,1], car_det[i,2]), (car_det[i,3], car_det[i,4]), \
-                            car_det[i,5]), ((gt_car[j,0], gt_car[j,1]), (gt_car[j,2], gt_car[j,3]), gt_car[j,4]*180/3.14))[1]
-            if int_pts is not None:
-                order_pts = cv2.convexHull(int_pts, returnPoints=True)
-                int_area  = cv2.contourArea(order_pts)
-                inter     = int_area * 1.0 / (tarea + area - int_area + EPSILON)  # compute IoU 
-            else:
-                inter = 0
-                
-            if inter>0.5:
-                det_label=1
-                break
-    return det_label.to(device)
+
+
