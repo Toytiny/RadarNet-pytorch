@@ -18,167 +18,75 @@ from header import Header
 import numpy as np
 import cv2
 
+def calculate_loss(match_label,tp_match_label,det,vel_att,gt_boxes,device):
 
-def detection_cls_loss(car_det,moc_det,loss_label_car,loss_label_moc):
-    loss_car_cls=0
-    loss_moc_cls=0
-    num_sample_car=0
-    num_sample_moc=0
-    if loss_label_car.size()[1]==0:
-        loss_car_cls=0
-    else:
-        for i in range(loss_label_car.size()[0]):
-            if torch.max(loss_label_car[i,:])>-1:
-                num_sample_car+=1
-                loss_car_cls-=torch.max(loss_label_car[i,:])*torch.log(car_det[i,0])+(\
-                            1-torch.max(loss_label_car[i,:]))*torch.log(1-car_det[i,0])
-                
-        loss_car_cls=loss_car_cls/(num_sample_car+1e-5)
     
-    if loss_label_moc.size()[1]==0:
-        loss_moc_cls=0
-    else:    
-        for i in range(loss_label_moc.size()[0]):
-            if torch.max(loss_label_moc.size()[0]):
-                num_sample_moc+=1
-                loss_moc_cls-=torch.max(loss_label_moc[i,:])*torch.log(moc_det[i,0])+(\
-                            1-torch.max(loss_label_moc[i,:]))*torch.log(1-moc_det[i,0])
-                
-        loss_moc_cls=loss_moc_cls/(num_sample_moc+1e-5)
+    pre_scores=det[:,0]
+   
+    sum_loss=0
+    loss_vel_reg=0
+    loss_vel_cls=0
+    loss_det_cls=0
+    loss_det_reg=0
+    loss_vel_att=0
+    num_gt=match_label.size()[1]
+    num_pre=match_label.size()[0]
     
-    return loss_moc_cls+loss_car_cls
-
-def detection_reg_loss(car_det,moc_det,loss_label_car,loss_label_moc,gt_car,gt_moc):
-    loss_car_reg=0
-    loss_moc_reg=0
-    num_positive_car=0
-    num_positive_moc=0
-    if loss_label_car.size()[1]==0:
-        loss_car_reg=0
-    else:
-        for j in range(loss_label_car.size()[1]):
-            for i in range(loss_label_car.size()[0]):
-                if loss_label_car[i,j]>0:  # only on positive sample
-                    num_positive_car+=1
-                    for k in range(0,5):
-                        if torch.abs(car_det[i,k+1]-gt_car[j,k])<1:  # smooth L1 loss on x, y, w, l, theta
-                            loss_car_reg+=0.5*torch.pow(car_det[i,k+1]-gt_car[j,k],2)
-                        else:
-                            loss_car_reg+=abs(car_det[i,k+1]-gt_car[j,k])-0.5
-        loss_car_reg=loss_car_reg/(num_positive_car+1e-5)
-    
-    if loss_label_moc.size()[1]==0:
-        loss_moc_reg=0
-    else:
-        for j in range(loss_label_moc.size()[1]):
-            for i in range(loss_label_moc.size()[0]):
-                if loss_label_moc[i,j]>0:  # only on positive sample
-                    num_positive_moc+=1
-                    for k in range(0,5):
-                        if torch.abs(moc_det[i,k+1]-gt_moc[j,k])<1:  # smooth L1 loss on x, y, w, l, theta
-                            loss_moc_reg+=0.5*torch.pow(moc_det[i,k+1]-gt_moc[j,k],2)
-                        else:
-                            loss_moc_reg+=abs(moc_det[i,k+1]-gt_moc[j,k])-0.5
-        loss_moc_reg=loss_moc_reg/(num_positive_moc+1e-5)
-    
-    return loss_moc_reg+loss_car_reg
-
-def velocity_cls_loss(car_det,moc_det,loss_label_car,loss_label_moc,gt_car,gt_moc):
-    loss_car_cls=0
-    loss_moc_cls=0
-    num_positive_car=0
-    num_positive_moc=0
-    if loss_label_car.size()[1]==0:
-        loss_car_cls=0
-    else:
-        for j in range(loss_label_car.size()[1]):
-            for i in range(loss_label_car.size()[0]):
-                if loss_label_car[i,j]>0:  # only on positive sample
-                    num_positive_car+=1
-                    loss_car_cls-=gt_car[j,5]*torch.log(car_det[i,8])+(1-gt_car[j,5])*torch.log(1-car_det[i,8])
-            
-        loss_car_cls=loss_car_cls/(num_positive_car+1e-5)
+    N=torch.sum(match_label==1).int()
+   
+    for k in range(0,num_gt):
         
-    if loss_label_moc.size()[1]==0:
-        loss_moc_cls=0
-    else:
-        for j in range(loss_label_moc.size()[1]):
-            for i in range(loss_label_moc.size()[0]):
-                if loss_label_moc[i,j]>0:  # only on positive sample
-                    num_positive_moc+=1
-                    loss_moc_cls-=gt_moc[j,5]*torch.log(moc_det[i,8])+(1-gt_moc[j,5])*torch.log(1-moc_det[i,8])
+        # Hard negative mining
+        num_p=torch.sum(match_label[:,k]==1).int()
+        num_n=3*num_p
+        loss_c=torch.zeros(num_pre).to(device) # loss used for mining
+        for p in range(0,num_pre):
+            # calculate the confidence loss for negative samples, set 0 to other samples
+            if match_label[p,k]==0:
+                loss_c[p]=-torch.log(1-pre_scores[p])
+            else:
+                loss_c[p]=0
                 
-        loss_moc_cls=loss_moc_cls/(num_positive_moc+1e-5)
+        loss_c,index_c=torch.sort(loss_c,descending=True)
+        index_n=index_c[0:num_n]  # index for the negative sample
+        index_p=torch.where(match_label[:,k]==1)[0] # index for the postive sample
+        index_tp=torch.where(tp_match_label[:,k]==1)[0] # index for the true positive sample
+        
+        # calculate the detection classification cross entropy loss
+        loss_det_cls+=torch.sum(loss_c.index_select(0,index_n)) # loss for negative
+        for ind in index_p: # loss for positive
+            loss_det_cls-=torch.log(pre_scores[ind])
+        
+        # calculate the detection regression smooth L1 loss (only on positive sample)
+        for ind in index_p:
+            for i in range(0,5):
+                if torch.abs(det[ind,i+1]-gt_boxes[k,i])<1:  # smooth L1 loss on x, y, w, l, theta
+                    loss_det_reg+=0.5*torch.pow(det[ind,i+1]-gt_boxes[k,i],2)
+                else:
+                    loss_det_reg+=abs(det[ind,i+1]-gt_boxes[k,i])-0.5
+            
+        # calculate the velocity classification cross entropy loss (only on positive sample)
+        for ind in index_p:
+            loss_vel_cls-=gt_boxes[k,7]*torch.log(det[ind,6])+(1-gt_boxes[k,7])*torch.log(1-det[ind,6])
+            
+        # calculate the velocity regression smooth L1 loss (only on positive sample)
+        for ind in index_p:
+            for i in range(5,7):
+                if torch.abs(det[ind,i+2]-gt_boxes[k,i])<1:  # smooth L1 loss on v_x,v_y
+                    loss_vel_reg+=0.5*torch.pow(det[ind,i+2]-gt_boxes[k,i],2)
+                else:
+                    loss_vel_reg+=abs(det[ind,i+2]-gt_boxes[k,i])-0.5
+                    
+        # calculate the refined velocity regression smooth L1 loss (only on true positive sample)
+        for ind in index_tp:
+            for i in range(5,7):
+                if torch.abs(vel_att[ind,i-5]-gt_boxes[k,i])<1:  # smooth L1 loss on v_x,v_y
+                    loss_vel_att+=0.5*torch.pow(vel_att[ind,i-5]-gt_boxes[k,i],2)
+                else:
+                    loss_vel_att+=abs(vel_att[ind,i-5]-gt_boxes[k,i])-0.5
+        
+    sum_loss+=0.1*(loss_vel_reg+loss_vel_cls)+loss_det_cls+loss_det_reg+0.1*loss_vel_att
+    sum_loss=sum_loss/(N+1e-6)
     
-    
-    return loss_moc_cls+loss_car_cls
+    return sum_loss
 
-def velocity_reg_loss(car_det,moc_det,loss_label_car,loss_label_moc,gt_car,gt_moc):
-    loss_car_reg=0
-    loss_moc_reg=0
-    num_positive_car=0
-    num_positive_moc=0
-    if loss_label_car.size()[1]==0:
-        loss_car_reg=0
-    else:
-        for j in range(loss_label_car.size()[1]):
-            for i in range(loss_label_car.size()[0]):
-                if loss_label_car[i,j]>0:  # only on positive sample
-                    num_positive_car+=1
-                    for k in range(5,7):
-                        if torch.abs(car_det[i,k+1]-gt_car[j,k])<1:  # smooth L1 loss on v_x,v_y
-                            loss_car_reg+=0.5*torch.pow(car_det[i,k+1]-gt_car[j,k],2)
-                        else:
-                            loss_car_reg+=abs(car_det[i,k+1]-gt_car[j,k])-0.5
-        loss_car_reg=loss_car_reg/(num_positive_car+1e-5)
-    
-    if loss_label_moc.size()[1]==0:
-        loss_moc_reg=0
-    else:
-        for j in range(loss_label_moc.size()[1]):
-            for i in range(loss_label_moc.size()[0]):
-                if loss_label_moc[i,j]>0:  # only on positive sample
-                    num_positive_moc+=1
-                    for k in range(5,7):
-                        if torch.abs(moc_det[i,k+1]-gt_moc[j,k])<1:  # smooth L1 loss on v_x,v_y
-                            loss_moc_reg+=0.5*torch.pow(moc_det[i,k+1]-gt_moc[j,k],2)
-                        else:
-                            loss_moc_reg+=abs(moc_det[i,k+1]-gt_moc[j,k])-0.5
-        loss_moc_reg=loss_moc_reg/(num_positive_moc+1e-5)
-    
-    return loss_moc_reg+loss_car_reg
-
-def refined_reg_loss(refined_vels_car,refined_vels_moc,loss_label_car,loss_label_moc,gt_car,gt_moc):
-    loss_car_reg=0
-    loss_moc_reg=0
-    num_positive_car=0
-    num_positive_moc=0
-    if loss_label_car.size()[1]==0:
-        loss_car_reg=0
-    else:
-        for j in range(loss_label_car.size()[1]):
-            for i in range(loss_label_car.size()[0]):
-                if loss_label_car[i,j]>0:  # only on true positive sample
-                    num_positive_car+=1
-                    for k in range(0,2):
-                        if torch.abs(refined_vels_car[i,k]-gt_car[j,k])<1:  # smooth L1 loss on v_x,v_y
-                            loss_car_reg+=0.5*torch.pow(refined_vels_car[i,k]-gt_car[j,k],2)
-                        else:
-                            loss_car_reg+=abs(refined_vels_car[i,k]-gt_car[j,k])-0.5
-        loss_car_reg=loss_car_reg/(num_positive_car+1e-5)
-    
-    if loss_label_moc.size()[1]==0:
-        loss_moc_reg=0
-    else:
-        for j in range(loss_label_moc.size()[1]):
-            for i in range(loss_label_moc.size()[0]):
-                if loss_label_moc[i,j]>0:  # only on true positive sample
-                    num_positive_moc+=1
-                    for k in range(0,2):
-                        if torch.abs(refined_vels_moc[i,k]-gt_moc[j,k])<1:  # smooth L1 loss on v_x,v_y
-                            loss_moc_reg+=0.5*torch.pow(refined_vels_moc[i,k]-gt_moc[j,k],2)
-                        else:
-                            loss_moc_reg+=abs(refined_vels_moc[i,k]-gt_moc[j,k])-0.5
-        loss_moc_reg=loss_moc_reg/(num_positive_moc+1e-5)
-    
-    return loss_moc_reg+loss_car_reg

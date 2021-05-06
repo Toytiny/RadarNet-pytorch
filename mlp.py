@@ -14,14 +14,15 @@ class MLP(nn.Module):
         super(MLP, self).__init__()
         self.linear = nn.Sequential(
             nn.Linear(10,32),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(32,64),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(64,64),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(64,64),
-            nn.ReLU(inplace=True),
-            nn.Linear(64,1)
+            nn.ReLU(),
+            nn.Linear(64,1),
+            nn.Sigmoid()
             )
  
     def forward(self, x):

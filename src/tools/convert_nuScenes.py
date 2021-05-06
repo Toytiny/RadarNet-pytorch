@@ -25,7 +25,7 @@ OUT_PATH_PC = DATA_PATH + 'voxel_representations/'
 OUT_PATH_AN = DATA_PATH + 'annotations/'
 SPLITS = {
           'mini_val': 'v1.0-mini',
-          'mini_train': 'v1.0-mini',
+          #'mini_train': 'v1.0-mini',
           #'train': 'v1.0-trainval',
           #'val': 'v1.0-trainval',
           #'test': 'v1.0-test',
@@ -64,11 +64,11 @@ ATTRIBUTE_TO_ID = {
   'pedestrian.sitting_lying_down': 5,
   'vehicle.moving': 6, 'vehicle.parked': 7, 
   'vehicle.stopped': 8}
-side_range=(-40, 40) 
-fwd_range=(-40, 40)
-height_range = (-1.5,2.5)
+side_range=(-50, 50) 
+fwd_range=(-50, 50)
+height_range = (-3,5)
 res_height=0.5
-res_wl = 0.5
+res_wl = 0.15625
 num_features=int((height_range[1]-height_range[0])/res_height);
 num_x=int((fwd_range[1]-fwd_range[0])/res_wl);
 num_y=int((side_range[1]-side_range[0])/res_wl);
@@ -331,8 +331,8 @@ def main():
       num_pcs += 1
       out_path_current=out_path_pc+'/'+'voxel_scenes-{}_pcs-{}.json'.format(num_scenes,num_pcs)
       out_path_annos=out_path_an+'/'+'anno_scenes-{}_pcs-{}.json'.format(num_scenes,num_pcs)
-      # if os.path.exists(out_path_current) and os.path.exists(out_path_annos):
-      #     continue
+      if os.path.exists(out_path_current) and os.path.exists(out_path_annos):
+           continue
       # Complex coordinate transform from Lidar to car
       sd_record = nusc.get('sample_data', pc_token)
       cs_record = nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
@@ -398,10 +398,11 @@ def main():
                   'radar_target': radar_target.tolist(),
                   'timestap': sample['timestamp']/1e6,
                   }
-     
+      radar_voxel_channel=len(voxel_radar)
+      lidar_voxel_channel=len(voxel_lidar)
       print('Save {} voxel for {} sample in {} scene'.format(
          split, num_pcs, num_scenes))
-     
+      print('Lidar voxel channel: {}, Radar voxel channel: {}'.format(lidar_voxel_channel,radar_voxel_channel))
       #print('out_path', out_path_current)
       
 

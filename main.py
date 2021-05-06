@@ -21,10 +21,11 @@ from datasets.nuscenes import nuScenes
 from backbone import Backbone
 from header import Header
 from mlp import MLP
-from utils import NMS, softmax, late_fusion
-from loss import detection_cls_loss, detection_reg_loss, velocity_cls_loss,velocity_reg_loss,refined_reg_loss
-from label import get_tp_label, get_positive_label
+from utils import NMS, softmax, late_fusion, output_process
+
 import numpy as np
+from matching import matching_boxes,matching_tp_boxes
+from loss import calculate_loss
 import cv2
  
     
@@ -43,7 +44,7 @@ def main(opt):
         
     print('Creating model...')
     
-    BBNet=Backbone(86).to(device)
+    BBNet=Backbone(166).to(device)
     Header_car=Header().to(device)
     Header_moc=Header().to(device)       
     MLPNet=MLP().to(device)
@@ -72,6 +73,7 @@ def main(opt):
         
     num_iters = len(train_loader) if opt.num_iters < 0 else opt.num_iters    
     
+
     
     print('Starting training...')
     
@@ -80,7 +82,9 @@ def main(opt):
         for ind, (gt_car,gt_moc,input_voxel, input_target) in enumerate(train_loader):
             if ind >= num_iters:
                 break
-            
+       
+          
+        
             if gt_car.size()[1]>0:
                 gt_car=gt_car.reshape((gt_car.size()[1],gt_car.size()[2])).to(device)
             else:
@@ -90,6 +94,8 @@ def main(opt):
             else:
                 gt_moc=gt_moc.reshape(0,0).to(device)
                 
+            if not input_voxel.size()[1]==166:
+                continue
             # Through the network
             input_voxel = input_voxel.float() 
             
@@ -104,83 +110,43 @@ def main(opt):
             cls_car, reg_car = Header_car(backbone)
             cls_moc, reg_moc = Header_moc(backbone)
             
-            cls_car=cls_car.reshape((cls_car.size()[1:4]))
-            cls_moc=cls_moc.reshape((cls_moc.size()[1:4]))
-            reg_car=reg_car.reshape((reg_car.size()[1:4]))
-            reg_moc=reg_moc.reshape((reg_moc.size()[1:4]))
+            # process the output from network
+            car_det,moc_det= output_process(cls_car,reg_car,cls_moc,reg_moc,device)
             
-            # Apply sigmoid for confidence score
-            cls_car=torch.sigmoid(cls_car)
-            cls_moc=torch.sigmoid(cls_moc)
-            reg_car[6]=torch.sigmoid(reg_car[6])
-            reg_moc[6]=torch.sigmoid(reg_moc[6])
-            # Add the voxel center value
-            for i in range(0,reg_car.size()[0]):
-                for j in range(0,reg_moc.size()[1]):
-                    reg_car[0,i,j]+=j*4+2
-                    reg_car[1,i,j]+=i*4+2
-                    reg_moc[0,i,j]+=j*4+2
-                    reg_moc[1,i,j]+=i*4+2
+            # Matching the predicted boxes with groundtruth boxes
+            match_label_car=matching_boxes(car_det[:,9:11],gt_car[:,0:5],device)
+            match_label_moc=matching_boxes(moc_det[:,9:11],gt_moc[:,0:5],device)
             
-            
-            # Prepare the input for NMS
-            car_boxes=torch.cat((reg_car[:4],(torch.atan(reg_car[5]/reg_car[4]))\
-                                 .reshape(1,reg_car.size()[1],reg_car.size()[2])\
-                                 ,reg_car[7:9],reg_car[6].reshape(1,reg_car.size()[1],reg_car.size()[2])),dim=0)
-            moc_boxes=torch.cat((reg_moc[:4],(torch.atan(reg_moc[5]/reg_moc[4]))\
-                                 .reshape(1,reg_moc.size()[1],reg_moc.size()[2])\
-                                ,reg_moc[7:9],reg_car[6].reshape(1,reg_car.size()[1],reg_car.size()[2])),dim=0)
-            
-            car_boxes=car_boxes.reshape(car_boxes.size()[0],car_boxes.size()[1]*car_boxes.size()[2]).t()
-            moc_boxes=moc_boxes.reshape(moc_boxes.size()[0],moc_boxes.size()[1]*moc_boxes.size()[2]).t()
-            
-            car_scores=cls_car.reshape(cls_car.size()[1]*cls_car.size()[2])
-            moc_scores=cls_moc.reshape(cls_moc.size()[1]*cls_moc.size()[2])
             
             # Keep the top 200 and NMS
-            car_boxes,car_scores=NMS(car_boxes,car_scores,0.5,200)
-            moc_boxes,moc_scores=NMS(moc_boxes,moc_scores,0.5,200)
+            #car_det=NMS(car_det,0.45,200)torch.autograd.set_detect_anomaly(True)
+            #moc_det=NMS(moc_det,0.45,200)
           
-            # Early output detections 
-            # c,x,y,w,l,theta,v_x,v_y,m
-            car_det=torch.cat((car_scores.reshape(car_scores.size()[0],1),car_boxes),dim=1)
-            moc_det=torch.cat((moc_scores.reshape(moc_scores.size()[0],1),moc_boxes),dim=1)
-            
             # Radar_target x,y,v_r,m,dt
             radar_target=input_target.reshape(input_target.size()[1],input_target.size()[2])
             
-            # Detection-Radar Association and velocity aggregation
-            refined_vels_car=late_fusion(car_det,radar_target,center_x,center_y,MLPNet,device)
-            refined_vels_moc=late_fusion(moc_det,radar_target,center_x,center_y,MLPNet,device)
+            # Getting the true positive detection
+            tp_car_label=matching_tp_boxes(match_label_car,car_det,device)
+            tp_moc_label=matching_tp_boxes(match_label_moc,moc_det,device)
             
+            # Detection-Radar Association and velocity aggregation (only for true positive) 
+            car_vel_att=late_fusion(car_det,tp_car_label,radar_target,center_x,center_y,MLPNet,device)
+            moc_vel_att=late_fusion(moc_det,tp_moc_label,radar_target,center_x,center_y,MLPNet,device)
             
-            # Getting the truth positive sample label for loss calculation  IoU>0.5 and confidence>0.5
-            tp_label_car=get_tp_label(car_det,gt_car,device)
-            tp_label_moc=get_tp_label(moc_det,gt_moc,device) 
-
-            # Getting the positive sample label for loss calculation IoU>0.9 -> 1 IoU<0.4 -> 0 others -1
-            p_label_car=get_positive_label(car_det,gt_car,device)
-            p_label_moc=get_positive_label(moc_det,gt_moc,device)                                                                   
-                                                                      
-            # Calculate the cross entropy loss for detection classification 
-            loss_det_cls=detection_cls_loss(car_det,moc_det,p_label_car,p_label_moc)
-                                                                                      
-            # Calculate the smooth L1 loss for detection regression on positive sample
-            loss_det_reg=detection_reg_loss(car_det,moc_det,p_label_car,p_label_moc,gt_car,gt_moc)
+            # Calculte loss for detection and velocity (using hard negative mining)
+            loss_car=calculate_loss(match_label_car,tp_car_label,car_det,car_vel_att,gt_car,device)
+            loss_moc=calculate_loss(match_label_moc,tp_moc_label,moc_det,car_vel_att,gt_moc,device)
             
-            # Calculate the cross entropy loss for velocity classification on positive samples
-            loss_vel_cls=velocity_cls_loss(car_det,moc_det,p_label_car,p_label_moc,gt_car,gt_moc)
-            
-            # Calculate the smooth L1 loss for velocity regression on positive samples
-            loss_vel_reg=velocity_reg_loss(car_det,moc_det,p_label_car,p_label_moc,gt_car,gt_moc)
-            
-            # Calculate the smooth L1 loss for refined velocity regression on true positive samples
-            loss_ref_reg=refined_reg_loss(refined_vels_car,refined_vels_moc,tp_label_car,tp_label_moc,gt_car,gt_moc)
-            
-            loss_sum=loss_det_cls+loss_det_reg+0.1*loss_vel_cls+0.1*loss_vel_reg+0.1*loss_ref_reg
+            loss_sum=loss_car+loss_moc
             
             # Back Propagation and parameter update
+            optimizer_b.zero_grad()
+            optimizer_hc.zero_grad()
+            optimizer_hm.zero_grad()
+            optimizer_mlp.zero_grad()
+            
             loss_sum.backward()
+            
             
             optimizer_b.step()
             optimizer_hc.step()

@@ -34,8 +34,8 @@ class nuScenes(Dataset.Dataset):
 
   def __getitem__(self, index):
       
-    with open(self.annos_path+self.annos[index],'r') as f:
-        annos=ujson.load(f)
+    with open(self.annos_path+self.annos[index],'r') as a:
+        annos=ujson.load(a)
     with open(self.voxel_path+self.voxel[index],'r') as f:
         voxel=ujson.load(f)
     
