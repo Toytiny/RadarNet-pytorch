@@ -4,13 +4,16 @@ import os
 import json
 import ujson
 import numpy as np
-import cv2
+
 import copy
 import time
 import sys
+
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import matplotlib.pyplot as plt
 import time
-
+import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
 from nuscenes.nuscenes import NuScenes
@@ -24,8 +27,8 @@ DATA_PATH = '/home/toytiny/Desktop/RadarNet/data/nuscenes/'
 OUT_PATH_PC = DATA_PATH + 'voxel_representations/'
 OUT_PATH_AN = DATA_PATH + 'annotations/'
 SPLITS = {
-          'mini_val': 'v1.0-mini',
-          #'mini_train': 'v1.0-mini',
+          #'mini_val': 'v1.0-mini',
+          'mini_train': 'v1.0-mini',
           #'train': 'v1.0-trainval',
           #'val': 'v1.0-trainval',
           #'test': 'v1.0-test',
@@ -50,7 +53,7 @@ USED_SENSOR=['LIDAR_TOP', 'RADAR_FRONT', 'RADAR_FRONT_LEFT',
 CATS = ['car', 'truck', 'bus', 'trailer', 'construction_vehicle', 
         'pedestrian', 'motorcycle', 'bicycle', 'traffic_cone', 'barrier']
 CAT_IDS = {v: i + 1 for i, v in enumerate(CATS)}
-NUM_SWEEPS_LIDAR = 10
+NUM_SWEEPS_LIDAR = 1
 NUM_SWEEPS_RADAR = 6
 
 #suffix1 = '_{}sweeps'.format(NUM_SWEEPS) if NUM_SWEEPS > 1 else ''
@@ -67,7 +70,7 @@ ATTRIBUTE_TO_ID = {
 side_range=(-50, 50) 
 fwd_range=(-50, 50)
 height_range = (-3,5)
-res_height=0.5
+res_height=0.25
 res_wl = 0.15625
 num_features=int((height_range[1]-height_range[0])/res_height);
 num_x=int((fwd_range[1]-fwd_range[0])/res_wl);
@@ -96,8 +99,8 @@ def voxel_generate_lidar(points,side_range,fwd_range, height_range, res_wl, res_
         h_filt = np.logical_and((z_points > current_height_range[0]), (z_points < current_height_range[1]))
         filt = np.logical_and(np.logical_and(f_filt, s_filt),h_filt)
         
-        if not any(filt):
-            continue
+        #if not any(filt):
+        #    continue
         
         indices = np.argwhere(filt).flatten()
 
@@ -274,6 +277,8 @@ def get_radar_target(points,times, side_range,fwd_range,height_range,res_wl):
     targets=[]
     # point cloud information 
     for i in range(0,len(x_points)):
+        if np.isnan(vel_r[i]):
+            vel_r[i]=0
         target = {'location': [x_img[i],y_img[i]],
                   'vel_r': vel_r[i],
                   'motion':dy_prop[i],
@@ -300,9 +305,9 @@ def main():
     out_path_pc = OUT_PATH_PC + split 
     out_path_an = OUT_PATH_AN + split
     if not os.path.exists(out_path_pc):
-        os.mkdir(out_path_pc)
+        os.makedirs(out_path_pc)
     if not os.path.exists(out_path_an):
-        os.mkdir(out_path_an)
+        os.makedirs(out_path_an)
     categories_info = [{'name': CATS[i], 'id': i + 1} for i in range(len(CATS))]
     ret = {'pcs': [], 'annotations': [], 'categories': categories_info, 
            'scenes': [], 'attributes': ATTRIBUTE_TO_ID}
@@ -348,17 +353,17 @@ def main():
       print('Aggregating lidar data for sample:', num_pcs)   
       
       lidar_pcs, _ = LidarPointCloud.from_file_multisweep(nusc, 
-                            sample, LIDAR_LIST[0], LIDAR_LIST[0], NUM_SWEEPS_LIDAR)
+                               sample, LIDAR_LIST[0], LIDAR_LIST[0], NUM_SWEEPS_LIDAR)
       
-      # Transform lidar point clound from sensor coordinate to car
+        ## Transform lidar point clound from sensor coordinate to car
       voxel_lidar=[]
       voxel_radar=[]
       for i in range(0, len(lidar_pcs)):
-          lidar_pcs[i][:3, :] = trans_matr.dot(np.vstack((lidar_pcs[i][:3, :], 
-                                np.ones(lidar_pcs[i].shape[1]))))[:3, :]
-          # Extract voxel presentations for a timestamp
-          #print('Extracting voxel representation for lidar sweep:', i+1) 
-          voxel_lidar.append(voxel_generate_lidar(lidar_pcs[i],side_range,fwd_range,height_range,res_wl,res_height))
+            lidar_pcs[i][:3, :] = trans_matr.dot(np.vstack((lidar_pcs[i][:3, :], 
+                                   np.ones(lidar_pcs[i].shape[1]))))[:3, :]
+        #     # Extract voxel presentations for a timestamp
+            print('Extracting voxel representation for lidar sweep:', i+1) 
+            voxel_lidar.append(voxel_generate_lidar(lidar_pcs[i],side_range,fwd_range,height_range,res_wl,res_height))
           
           
    
@@ -370,6 +375,7 @@ def main():
           
           current_radar_pcs, current_radar_times = RadarPointCloud.from_file_multisweep(nusc, 
                         sample, sensor_name, LIDAR_LIST[0], NUM_SWEEPS_RADAR)
+          #print(len(current_radar_pcs))
           # Transpose radar point clound from lidar coordinate to car (in the above function, the velocity is automatically
           # transformed to the car coordinate)
           for i in range(0, len(current_radar_pcs)):
@@ -389,21 +395,21 @@ def main():
           #print('Getting radar target information from radar sweep', i+1)  
           radar_target=np.hstack((radar_target, get_radar_target(radar_pcs[i], radar_times[i], 
                                                                   side_range,fwd_range,height_range,res_wl)))
-      # point cloud information 
+      #point cloud information 
       pc_input = {'id': num_pcs,
-                  'scene_id': num_scenes,
-                  'scene_name': scene_name,
-                  'radar_feat': voxel_radar, 
-                  'lidar_feat': voxel_lidar,
-                  'radar_target': radar_target.tolist(),
-                  'timestap': sample['timestamp']/1e6,
-                  }
+                   'scene_id': num_scenes,
+                   'scene_name': scene_name,
+                   'radar_feat': voxel_radar, 
+                   'lidar_feat': voxel_lidar,
+                   'radar_target': radar_target.tolist(),
+                   'timestap': sample['timestamp']/1e6,
+                   }
       radar_voxel_channel=len(voxel_radar)
       lidar_voxel_channel=len(voxel_lidar)
       print('Save {} voxel for {} sample in {} scene'.format(
-         split, num_pcs, num_scenes))
+          split, num_pcs, num_scenes))
       print('Lidar voxel channel: {}, Radar voxel channel: {}'.format(lidar_voxel_channel,radar_voxel_channel))
-      #print('out_path', out_path_current)
+       #print('out_path', out_path_current)
       
 
       
@@ -418,7 +424,7 @@ def main():
       print('Aggregating annotations for sample:', num_pcs) 
       # Abandon boxes not in the detection region
       for box in boxes:
-          
+          #nusc.render_annotation(my_instance['first_annotation_token'])
           # Transform the boxes from sensor coordinate to car
           box.rotate(Quaternion(cs_record['rotation']))
           box.translate(cs_record['translation'])
@@ -440,7 +446,7 @@ def main():
           num_anns += 1
           category_id = CAT_IDS[det_name]
           v = np.dot(box.rotation_matrix, np.array([1, 0, 0]))
-          pitch = np.arctan2(v[1], v[0])
+          yaw = np.arctan2(v[1], v[0])
           vel = nusc.box_velocity(box.token)
           # get velocity in car coordinates
           vel = np.dot(np.linalg.inv(vel_global_from_car), 
@@ -459,6 +465,10 @@ def main():
           vel[0]=vel[0]/res_wl
           vel[1]=-vel[1]/res_wl
           
+          if np.isnan(vel[0]) or np.isnan(vel[1]):
+              vel[0]=0
+              vel[1]=0
+              
           sample_ann = nusc.get(
               'sample_annotation', box.token)
           instance_token = sample_ann['instance_token']
@@ -479,7 +489,7 @@ def main():
               'category_id': category_id,   # id for category of the object
               'dim': [wl[0],wl[1]],   # dimension in width, length 
               'location': [center[0], center[1]],   # object center location  
-              'rotation_z': pitch,    # object pitch angle
+              'rotation_z': yaw,    # object pitch angle
               'track_id': track_id,     # id for track object
               'attributes': ATTRIBUTE_TO_ID[att],  # object attributes
               'velocity':[vel[0],vel[1]],  # object velocity in the car coordinate, BEV images

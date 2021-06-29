@@ -18,7 +18,7 @@ class BasicConv2d(nn.Module):
         x = self.conv(x)
         x = self.bn(x)
         return F.relu(x)
-    
+
 
 class Backbone(nn.Module):
     def __init__(self,in_c):
@@ -139,8 +139,16 @@ class Backbone(nn.Module):
         self.b4_2=BasicConv2d(64,128,kernel_size=3,padding=1)
         self.b4_3=BasicConv2d(96,128,kernel_size=3,padding=1)
         
-        self.upsample1=nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=4, stride=2, padding=1)
-        self.upsample2=nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=4, stride=2, padding=1)
+        self.upsample1=nn.Sequential(
+            nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+            )
+        self.upsample2=nn.Sequential(
+            nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
+            )
         
     def forward(self,x):
         # first three Conv  
@@ -160,9 +168,9 @@ class Backbone(nn.Module):
         o3=self.b3_3(o3)+o3
            
         # first cross scale sum
-        k1=o1+s1+F.interpolate(self.b1_2(o2),scale_factor=2)+F.interpolate(self.b1_3(o3),scale_factor=4)
-        k2=o2+s2+F.interpolate(self.b2_3(o1),scale_factor=1/2)+F.interpolate(self.b2_4(o3),scale_factor=2)
-        k3=o3+s3+F.interpolate(self.b3_4(o1),scale_factor=1/4)+F.interpolate(self.b3_5(o2),scale_factor=1/2)
+        k1=o1+s1+F.interpolate(self.b1_2(o2),scale_factor=2,recompute_scale_factor=True)+F.interpolate(self.b1_3(o3),scale_factor=4,recompute_scale_factor=True)
+        k2=o2+s2+F.interpolate(self.b2_3(o1),scale_factor=1/2,recompute_scale_factor=True)+F.interpolate(self.b2_4(o3),scale_factor=2,recompute_scale_factor=True)
+        k3=o3+s3+F.interpolate(self.b3_4(o1),scale_factor=1/4,recompute_scale_factor=True)+F.interpolate(self.b3_5(o2),scale_factor=1/2,recompute_scale_factor=True)
         
         # second block
         f1=self.b1_4(k1)
@@ -173,9 +181,9 @@ class Backbone(nn.Module):
         f3=self.b3_8(f3)+f3
         
         # second cross scale sum
-        q1=f1+k1+F.interpolate(self.b1_5(f2),scale_factor=2)+F.interpolate(self.b1_6(f3),scale_factor=4)
-        q2=f2+k2+F.interpolate(self.b2_7(f1),scale_factor=1/2)+F.interpolate(self.b2_8(f3),scale_factor=2)
-        q3=f3+k3+F.interpolate(self.b3_9(f1),scale_factor=1/4)+F.interpolate(self.b3_10(f2),scale_factor=1/2)
+        q1=f1+k1+F.interpolate(self.b1_5(f2),scale_factor=2,recompute_scale_factor=True)+F.interpolate(self.b1_6(f3),scale_factor=4,recompute_scale_factor=True)
+        q2=f2+k2+F.interpolate(self.b2_7(f1),scale_factor=1/2,recompute_scale_factor=True)+F.interpolate(self.b2_8(f3),scale_factor=2,recompute_scale_factor=True)
+        q3=f3+k3+F.interpolate(self.b3_9(f1),scale_factor=1/4,recompute_scale_factor=True)+F.interpolate(self.b3_10(f2),scale_factor=1/2,recompute_scale_factor=True)
         
         # third block
         g1=self.b1_7(q1)
@@ -186,9 +194,9 @@ class Backbone(nn.Module):
         g3=self.b3_13(g3)+g3
         
         # third cross scale sum
-        c1=g1+q1+F.interpolate(self.b1_8(g2),scale_factor=2)+F.interpolate(self.b1_9(g3),scale_factor=4)
-        c2=g2+q2+F.interpolate(self.b2_11(g1),scale_factor=1/2)+F.interpolate(self.b2_12(g3),scale_factor=2)
-        c3=g3+q3+F.interpolate(self.b3_14(g1),scale_factor=1/4)+F.interpolate(self.b3_15(g2),scale_factor=1/2)
+        c1=g1+q1+F.interpolate(self.b1_8(g2),scale_factor=2,recompute_scale_factor=True)+F.interpolate(self.b1_9(g3),scale_factor=4,recompute_scale_factor=True)
+        c2=g2+q2+F.interpolate(self.b2_11(g1),scale_factor=1/2,recompute_scale_factor=True)+F.interpolate(self.b2_12(g3),scale_factor=2,recompute_scale_factor=True)
+        c3=g3+q3+F.interpolate(self.b3_14(g1),scale_factor=1/4,recompute_scale_factor=True)+F.interpolate(self.b3_15(g2),scale_factor=1/2,recompute_scale_factor=True)
         
         # FPN
         n=self.upsample1(self.b4_3(c3))
@@ -198,8 +206,8 @@ class Backbone(nn.Module):
         return n
  
 #def test():
-#    net=Backbone(43)
-#    net.cuda()
-#    summary(net,(43,320,320))
+    # net=Backbone(43)
+    # net.cuda()
+    # summary(net,(43,320,320))
     
 #test()

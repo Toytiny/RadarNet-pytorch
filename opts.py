@@ -125,7 +125,7 @@ class opts(object):
                              help='drop learning rate by 10.')
     self.parser.add_argument('--save_point', type=str, default='90',
                              help='when to save the model to disk.')
-    self.parser.add_argument('--num_epochs', type=int, default=25,
+    self.parser.add_argument('--num_epochs', type=int, default=100,
                              help='total training epochs.')
     self.parser.add_argument('--batch_size', type=int, default=1,
                              help='batch size')
@@ -266,9 +266,11 @@ class opts(object):
 
     # point clouds and nuScenes dataset
     self.parser.add_argument('--pointcloud', action='store_true')
-    self.parser.add_argument('--train_split', default='mini_val',
+    self.parser.add_argument('--train_split', default='mini_train',
                              choices=['train','mini_train', 'train_detect', 'train_track', 'mini_train_2', 'trainval'])
     self.parser.add_argument('--val_split', default='mini_val',
+                             choices=['val','mini_val','test'])
+    self.parser.add_argument('--test_split', default='mini_val',
                              choices=['val','mini_val','test'])
     self.parser.add_argument('--max_pc', type=int, default=1000,
                              help='maximum number of points in the point cloud')
@@ -363,7 +365,7 @@ class opts(object):
       opt.master_batch_size = -1
 
     # log dirs
-    opt.root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
+    opt.root_dir = os.path.join(os.path.dirname(__file__))
     opt.data_dir = os.path.join(opt.root_dir, 'data')
     opt.exp_dir = os.path.join(opt.root_dir, 'exp', opt.task)
     opt.save_dir = os.path.join(opt.exp_dir, opt.exp_id)

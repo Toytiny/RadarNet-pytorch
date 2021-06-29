@@ -3,6 +3,9 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import sys
+if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 from opts import opts
 import torch
 import torch.utils.data
@@ -14,146 +17,345 @@ import numpy as np
 from torchsummary import summary
 import torch.optim as optim
 from torch.autograd import Variable
-from logger import Logger
+from tensorboardX import SummaryWriter
 import json
 import ujson
+import shutil
+
 from datasets.nuscenes import nuScenes
 from backbone import Backbone
 from header import Header
 from mlp import MLP
 from utils import NMS, softmax, late_fusion, output_process
-
+from evaluate import evaluate_result
 import numpy as np
 from matching import matching_boxes,matching_tp_boxes
 from loss import calculate_loss
 import cv2
- 
+
+def weights_init(m):
+    
+    if isinstance(m, nn.Conv2d):
+        nn.init.kaiming_uniform_(m.weight)
+        nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Linear):
+        nn.init.kaiming_uniform_(m.weight.data, a=0, mode='fan_out')
+        nn.init.constant_(m.bias.data, 0.0)
+    elif isinstance(m, nn.ConvTranspose2d):
+        nn.init.kaiming_uniform_(m.weight.data)
+        nn.init.constant_(m.bias.data, 0.0)
+    elif isinstance(m,nn.BatchNorm2d):
+        nn.init.constant_(m.weight.data, 1.0)
+        nn.init.constant_(m.bias.data, 0.0)
     
 def main(opt):
     
-    torch.manual_seed(opt.seed)
-    torch.backends.cudnn.benchmark = not opt.not_cuda_benchmark and not opt.eval
+    #torch.manual_seed(opt.seed)
+    torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
   
-    print(opt)
-
+    device=torch.device("cuda:0" if use_gpu else "cpu")
     
-    device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    base_path="/home/toytiny/Desktop/RadarNet2/train_result/"
     
-    logger = Logger(opt)
+    data_path='/home/toytiny/Desktop/RadarNet/data/nuscenes/'
+    
+    loss_path=base_path+"loss.txt"
+    model_path=base_path+"model/"
+    
+    load_checkpoint=True
+    
+  
         
-    print('Creating model...')
+        
+    if not load_checkpoint:
+        
+        print('Creating model...')
     
-    BBNet=Backbone(166).to(device)
-    Header_car=Header().to(device)
-    Header_moc=Header().to(device)       
-    MLPNet=MLP().to(device)
+        BBNet=Backbone(38).to(device)
+        BBNet.apply(weights_init)
+        Header_car=Header().to(device) 
+        Header_car.apply(weights_init)
+        if os.path.exists(base_path):
+            shutil.rmtree(base_path)
+        if not os.path.exists(base_path):
+            os.mkdir(base_path)
+        if not os.path.exists(model_path):
+            os.mkdir(model_path)
+        with open(loss_path, 'w') as f:
+            f.write('This file records the loss during the network training\n') 
+        st_epoch=1
+    
+    else:
+        
+        model_files=sorted(os.listdir(model_path),key=lambda x:eval(x.split("-")[1].split(".")[0]))
+        model_check=model_files[-1]
+        
+        print('Loading checkpoint model '+model_check)
+        
+        load_model=torch.load(model_path+model_check,map_location='cuda:0')
+        BBNet=Backbone(38).to(device)
+        BBNet.load_state_dict(load_model["backbone"])
+        Header_car=Header().to(device) 
+        Header_car.load_state_dict(load_model["header"])
+        st_epoch=len(model_files)+1
+    
+  
     
     print('Creating Optimizer...')
     
-    optimizer_b = optim.Adam(BBNet.parameters(), lr=1e-3)
-    optimizer_hc= optim.Adam(Header_car.parameters(), lr=1e-3)
-    optimizer_hm= optim.Adam(Header_moc.parameters(), lr=1e-3)
-    optimizer_mlp=optim.Adam(MLPNet.parameters(),lr=1e-3)
-    
-    
-    data_path="/home/toytiny/Desktop/RadarNet/data/nuscenes/"
-    
-    if opt.val_intervals < opt.num_epochs or opt.eval:
-        print('Setting up validation data...')
-        val_loader = torch.utils.data.DataLoader(
-        nuScenes(opt, opt.val_split, data_path), batch_size=1, shuffle=False, 
-              num_workers=0, pin_memory=True)
+    optimizer_b = optim.Adam(BBNet.parameters(), lr=1e-10)
+    optimizer_hc= optim.Adam(Header_car.parameters(), lr=1e-10)
+ 
+    scheduler_b = torch.optim.lr_scheduler.StepLR(optimizer_b,step_size=5,gamma=0.8)
+    scheduler_hc = torch.optim.lr_scheduler.StepLR(optimizer_hc,step_size=5,gamma=0.8)
+   
+
+    warmup_b = torch.optim.lr_scheduler.StepLR(optimizer_b,step_size=10,gamma=1.03)
+    warmup_hc = torch.optim.lr_scheduler.StepLR(optimizer_hc,step_size=10,gamma=1.03)
   
+    warmup_iter=0
+    
+  
+    
+    
+    
+   
+    
+    
+    
+ 
+    
+    print('Setting up validation data...')
+    val_loader = torch.utils.data.DataLoader(
+            nuScenes(opt, opt.val_split, data_path), batch_size=1, 
+            shuffle=False, num_workers=0, 
+            pin_memory=True,drop_last=True)
+    
+    train_loader = torch.utils.data.DataLoader(
+            nuScenes(opt, opt.train_split, data_path), batch_size=1, 
+            shuffle=True, num_workers=0, 
+            pin_memory=True, drop_last=True)
+  
+    batch_size=2;
+    ite_epoch=np.floor(len(train_loader)/batch_size)
+    
+    iter_ind=(st_epoch-1)*ite_epoch
+    
+    print('Batch_size is:',batch_size)
+        
+
+    torch.autograd.set_detect_anomaly(False)
+   
+    
+    for epoch in range(st_epoch, opt.num_epochs + 1):
+        
+        # Training phase
+        print('Starting training for epoch-{}'.format(epoch))
+        
         print('Setting up train data...')
         train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=False, num_workers=0, 
+            shuffle=True, num_workers=0, 
             pin_memory=True, drop_last=True)
         
-    num_iters = len(train_loader) if opt.num_iters < 0 else opt.num_iters    
-    
-
-    
-    print('Starting training...')
-    
-    for epoch in range(1, opt.num_epochs + 1):
-      
-        for ind, (gt_car,gt_moc,input_voxel, input_target) in enumerate(train_loader):
-            if ind >= num_iters:
-                break
-       
-          
+        num_iters = len(train_loader)*opt.num_epochs/batch_size 
+        loss_epoch=torch.zeros(1).to(device)
+        ap_epoch=torch.zeros(1).to(device)
         
-            if gt_car.size()[1]>0:
-                gt_car=gt_car.reshape((gt_car.size()[1],gt_car.size()[2])).to(device)
-            else:
-                gt_car=gt_car.reshape(0,0).to(device)
-            if gt_moc.size()[1]>0:  
-                gt_moc=gt_moc.reshape((gt_moc.size()[1],gt_moc.size()[2])).to(device)
-            else:
-                gt_moc=gt_moc.reshape(0,0).to(device)
+        
+        BBNet.train()
+        Header_car.train()
+    
+        for ind, (gt,voxel,_) in enumerate(train_loader):
+            
+            # whether to initilizate the iteration
+            if ind%batch_size==0:
                 
-            if not input_voxel.size()[1]==166:
+                input_voxels=torch.Tensor([])
+                gt_cars=[]
+                iter_ind+=1
+                loss_all=torch.zeros(1).to(device)
+                train_ap=torch.zeros(1).to(device)
+                
+                print('Starting iter-{} in epoch {}'.format(int(iter_ind),epoch))
+             
+            input_voxels=torch.cat([input_voxels,voxel],dim=0)
+            gt_cars.append(gt.reshape((gt.size()[1],gt.size()[2])))
+            
+            # whether to continue
+            if not (ind+1)%batch_size==0:
                 continue
-            # Through the network
-            input_voxel = input_voxel.float() 
             
-            center_x=input_voxel.size()[2]/2
-            center_y=input_voxel.size()[1]/2
+            else:
+                
+                # Through the network
+                input_voxels = input_voxels.float().to(device)
             
-            input_target=input_target.to(device)
-            input_voxel = Variable(input_voxel).to(device)
+        
+                backbones=BBNet(input_voxels)
+                
+                if torch.any(torch.isnan(backbones)):
+                    for parameter in BBNet.parameters():
+                        print(torch.max(parameter))
+                        
+                    raise ValueError("backbone element is nan or inf")
+                    
+                cls_cars, reg_cars=Header_car(backbones)
+                if torch.any(torch.isnan(reg_cars)):
+                    raise ValueError("reg element is nan or inf")
+                if torch.any(torch.isnan(cls_cars)):
+                    raise ValueError("cls element is nan or inf")
+                
+                # c x y w l theta x_p y_p
+                car_dets= output_process(cls_cars,reg_cars,device,batch_size)
+                
+                if torch.any(torch.isnan(car_dets)):
+                    raise ValueError("det element is nan or inf")
+                    
+                for k in range(0,batch_size):
+                    
+                    gt_car=gt_cars[k].to(device)
+                 
+                    car_det=car_dets[k].t()
+                    
+                    #with torch.no_grad():
+                    #    car_output=NMS(car_det,0.1,25600)
+                    # Matching the predicted boxes with groundtruth boxes
+                    # gt_car: x y w l theta vx vy
+                    match_label_car=matching_boxes(car_det[:,6:8],gt_car[:,0:5],device)
+                            
+                    loss_car=calculate_loss(match_label_car,car_det,gt_car,device)
+                    
+                    loss_all=loss_all+loss_car
+                    
+                    with torch.no_grad():
+                        
+                        car_output=NMS(car_det,0.05,50)
+                
+                        AP=evaluate_result(car_output,gt_car,device)
+                    
+                        train_ap=train_ap+AP
             
-            backbone=BBNet(input_voxel)
+                loss_all=loss_all/batch_size
+                
+                train_ap=train_ap/batch_size
+                    
+                loss_msg='The loss of iter-{} is {}'.format(iter_ind,loss_all.item())
+                
+                print(loss_msg)
+                
+                loss_epoch=loss_epoch+loss_all
+                
+                ap_epoch=ap_epoch+train_ap
+                
+                ap_msg='The AP of iter-{} is {}'.format(iter_ind,train_ap.item())+'\n'
+                print(ap_msg)
+                
+                
+                with open(loss_path,'a') as f:
+                    f.write(loss_msg)
+                    f.write(ap_msg)
+                    
+                
+                optimizer_b.zero_grad()
+                optimizer_hc.zero_grad()
+                
+                
+                loss_all.backward()
+                    
+                #nn.utils.clip_grad_norm_(BBNet.parameters(), max_norm=2, norm_type=2)
+                #nn.utils.clip_grad_norm_(Header_car.parameters(), max_norm=2, norm_type=2)
+                #nn.utils.clip_grad_norm_(MLPNet.parameters(), max_norm=2, norm_type=2) 
+                
+                if iter_ind<warmup_iter:
+                    warmup_b.step()
+                    warmup_hc.step()
+                    
+                
+                optimizer_b.step()
+                optimizer_hc.step()
+                   
+        ap_epoch=ap_epoch/ite_epoch
+        loss_epoch=loss_epoch/ite_epoch
+        e_ap='The AP of epoch-{} is {}'.format(epoch,ap_epoch.item())
+        e_loss='The loss of epoch-{} is {}'.format(epoch,loss_epoch.item())+'\n'
+        print(e_ap)
+        print(e_loss)
+        with open(loss_path,'a') as f:
+            f.write(e_ap)
+            f.write(e_loss)
             
-            cls_car, reg_car = Header_car(backbone)
-            cls_moc, reg_moc = Header_moc(backbone)
-            
-            # process the output from network
-            car_det,moc_det= output_process(cls_car,reg_car,cls_moc,reg_moc,device)
-            
-            # Matching the predicted boxes with groundtruth boxes
-            match_label_car=matching_boxes(car_det[:,9:11],gt_car[:,0:5],device)
-            match_label_moc=matching_boxes(moc_det[:,9:11],gt_moc[:,0:5],device)
-            
-            
-            # Keep the top 200 and NMS
-            #car_det=NMS(car_det,0.45,200)torch.autograd.set_detect_anomaly(True)
-            #moc_det=NMS(moc_det,0.45,200)
           
-            # Radar_target x,y,v_r,m,dt
-            radar_target=input_target.reshape(input_target.size()[1],input_target.size()[2])
+        if iter_ind>warmup_iter:
+            scheduler_b.step()
+            scheduler_hc.step()
+            #optimizer_hm.step()
             
-            # Getting the true positive detection
-            tp_car_label=matching_tp_boxes(match_label_car,car_det,device)
-            tp_moc_label=matching_tp_boxes(match_label_moc,moc_det,device)
+        
+        state={'backbone': BBNet.state_dict(), 
+               'optimizer_b':optimizer_b.state_dict(), 
+               'header':Header_car.state_dict(), 
+               'optimizer_hc':optimizer_hc.state_dict(),  
+               'epoch':epoch}
+        
+        current_path=model_path+'epoch-{}'.format(epoch)
+        torch.save(state,current_path+'.pth')
+        
+        # validation phase
+        print('Starting validation for epoch-{}'.format(epoch))
+        
+        BBNet.eval()
+        Header_car.eval()
+        
+        car_det=torch.Tensor([])
+        car_dets=torch.Tensor([])
+       
+        cls_cars=torch.Tensor([])
+        input_voxels=torch.Tensor([])
+        match_label_car=torch.Tensor([])
+        reg_cars=torch.Tensor([])
+        voxel=torch.Tensor([])
+        
+        with torch.no_grad():
             
-            # Detection-Radar Association and velocity aggregation (only for true positive) 
-            car_vel_att=late_fusion(car_det,tp_car_label,radar_target,center_x,center_y,MLPNet,device)
-            moc_vel_att=late_fusion(moc_det,tp_moc_label,radar_target,center_x,center_y,MLPNet,device)
+            aver_ap=torch.zeros(1).to(device)
             
-            # Calculte loss for detection and velocity (using hard negative mining)
-            loss_car=calculate_loss(match_label_car,tp_car_label,car_det,car_vel_att,gt_car,device)
-            loss_moc=calculate_loss(match_label_moc,tp_moc_label,moc_det,car_vel_att,gt_moc,device)
+            for ind, (gt_car,input_voxel) in enumerate(val_loader):
+                
+                if gt_car.size()[1]>0:
+                    gt_car=Variable(gt_car.reshape((gt_car.size()[1],gt_car.size()[2]))).to(device)
+                else:
+                    continue
             
-            loss_sum=loss_car+loss_moc
+                input_voxel = input_voxel.float() 
+   
+                input_voxel = input_voxel.to(device)
+                
+                backbone=BBNet(input_voxel)
+                
+                cls_car, reg_car = Header_car(backbone)
+                # cls_moc, reg_moc = Header_moc(backbone)
+
+                # process the output from network
+                car_det= output_process(cls_car,reg_car,device,batch_size)
+                car_det=car_det.reshape((car_det.size()[1],car_det.size()[2])).t()
+                car_output=NMS(car_det,0.1,200)
+                
+                AP=evaluate_result(car_output,gt_car,device)
+                
+                #print('current sample AP: {}'.format(AP))
+                
+                aver_ap+=AP
             
-            # Back Propagation and parameter update
-            optimizer_b.zero_grad()
-            optimizer_hc.zero_grad()
-            optimizer_hm.zero_grad()
-            optimizer_mlp.zero_grad()
+            aver_ap=aver_ap/len(val_loader)
             
-            loss_sum.backward()
-            
-            
-            optimizer_b.step()
-            optimizer_hc.step()
-            optimizer_hm.step()
-            optimizer_mlp.step()
-            
+            eval_msg='Epoch-{} Average Precision: {}\n'.format(epoch,aver_ap.item())
+            print(eval_msg)
+            with open(loss_path,'a') as f:
+                f.write(eval_msg)
+                
+
 if __name__ == '__main__':
   opt = opts().parse()
   main(opt)
-
