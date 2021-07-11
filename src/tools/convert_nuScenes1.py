@@ -27,8 +27,8 @@ DATA_PATH = '/home/toytiny/Desktop/RadarNet/data/nuscenes/'
 OUT_PATH_PC = DATA_PATH + 'voxel_representations/'
 OUT_PATH_AN = DATA_PATH + 'annotations/'
 SPLITS = {
-          #'mini_val': 'v1.0-mini',
-          'mini_train': 'v1.0-mini',
+          'mini_val': 'v1.0-mini',
+          #'mini_train': 'v1.0-mini',
           #'train': 'v1.0-trainval',
           #'val': 'v1.0-trainval',
           #'test': 'v1.0-test',
@@ -312,9 +312,9 @@ def main():
     ret = {'pcs': [], 'annotations': [], 'categories': categories_info, 
            'scenes': [], 'attributes': ATTRIBUTE_TO_ID}
     
-    num_scenes = 0
-    num_pcs = 0
-    num_anns = 0
+    num_scenes = 1
+    num_pcs = 38
+    num_anns = 38
     
     # A "sample" in nuScenes refers to a timestamp with 5 RADAR and 1 LIDAR keyframe.
     for sample in nusc.sample:
@@ -615,9 +615,9 @@ SCENE_SPLITS = {
      'scene-1060', 'scene-1061', 'scene-1062', 'scene-1063', 'scene-1064', 'scene-1065', 'scene-1066', 'scene-1067',
      'scene-1068', 'scene-1069', 'scene-1070', 'scene-1071', 'scene-1072', 'scene-1073'],
 'mini_train':
-    ['scene-0061'],
+    ['scene-0553'],
 'mini_val':
-    ['scene-0103', 'scene-0916'],    
+    ['scene-0916'],    
 }
     
 if __name__ == '__main__':

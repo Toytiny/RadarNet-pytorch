@@ -26,10 +26,10 @@ from pointcloud import LidarPointCloud2 as LidarPointCloud
 from pointcloud import RadarPointCloud2 as RadarPointCloud
 
 LIDAR_LIST=['LIDAR_TOP']
-DATA_PATH = '/home/toytiny/Desktop/RadarNet/data/nuscenes/'
+DATA_PATH = '/home/fangqiang/data/nuscenes/'
 SPLITS = {
           'mini_val': 'v1.0-mini',
-          #'mini_train': 'v1.0-mini',
+          'mini_train': 'v1.0-mini',
           #'train': 'v1.0-trainval',
           #'val': 'v1.0-trainval',
           #'test': 'v1.0-test',
@@ -41,7 +41,7 @@ SCENE_SPLITS = {
     ['scene-0103', 'scene-0916'],    
 }
     
-NUM_SWEEPS_LIDAR=10
+NUM_SWEEPS_LIDAR=3
 
 OUT_PATH='/home/toytiny/Desktop/RadarNet2/figures/'
 
@@ -125,7 +125,10 @@ def nuscenes_lidar_bev():
             pc_token = sample['data'][LIDAR_LIST[0]]
             pc_data = nusc.get('sample_data', pc_token)
             num_pcs += 1
-            out_path_current=out_path+'/'+'bev_scenes-{}_pcs-{}.jpg'.format(num_scenes,num_pcs)
+            if num_pcs<0:
+                out_path_current=out_path+'/'+'bev_scenes-{}_pcs-0{}.jpg'.format(num_scenes,num_pcs)
+            else:
+                out_path_current=out_path+'/'+'bev_scenes-{}_pcs-{}.jpg'.format(num_scenes,num_pcs)
             if os.path.exists(out_path_current):
                 continue
             # Complex coordinate transform from Lidar to car

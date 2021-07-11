@@ -11,9 +11,11 @@ import ujson
 import cv2
 import random
 import os
+import orjson
 import sys
 import math
 import copy
+from time import *
 from tqdm import tqdm
 import torch.utils.data.dataset as Dataset
 
@@ -45,12 +47,16 @@ class nuScenes(Dataset.Dataset):
         voxel=ujson.load(f)
     with open(self.annos_path+self.annos[index],'r') as p:
         annos=ujson.load(p)
-    
+    # end_time=time()
+    # runtime=end_time-begin_time
+    # print('The time for backward is', runtime)
     radar_voxel=np.asarray(voxel['radar_feat'])
     input_voxel=radar_voxel
+    
     for i in range(0,len(voxel['lidar_feat'])):
         current_lidar_voxel=np.asarray(voxel['lidar_feat'][i])
         input_voxel=np.concatenate((input_voxel,current_lidar_voxel),axis=0)
+        
     
     # radar_target=voxel['radar_target']
     
@@ -66,11 +72,11 @@ class nuScenes(Dataset.Dataset):
     for i in range(0,len(annos)):
         if annos[i]['category_id']==1:
             if annos[i]['attributes']==6:
-                gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
-                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],1])
+                gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][1],\
+                               annos[i]['dim'][0],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],1])
             else:
-                gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][0],\
-                               annos[i]['dim'][1],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],0])  
+                gt_car.append([annos[i]['location'][0],annos[i]['location'][1],annos[i]['dim'][1],\
+                               annos[i]['dim'][0],annos[i]['rotation_z'],annos[i]['velocity'][0],annos[i]['velocity'][1],0])  
                 
         # if annos[i]['category_id']==7:
         #     if annos[i]['attributes']==1:

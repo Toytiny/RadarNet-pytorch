@@ -10,7 +10,7 @@ from opts import opts
 import torch
 import torch.utils.data
 from torch import nn
-
+from time import *
 import torch.nn.functional as F
 import numpy as np
 
@@ -36,13 +36,13 @@ import cv2
 def weights_init(m):
     
     if isinstance(m, nn.Conv2d):
-        nn.init.kaiming_uniform_(m.weight)
+        nn.init.kaiming_normal_(m.weight)
         nn.init.constant_(m.bias, 0)
     elif isinstance(m, nn.Linear):
-        nn.init.kaiming_uniform_(m.weight.data, a=0, mode='fan_out')
+        nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_out')
         nn.init.constant_(m.bias.data, 0.0)
     elif isinstance(m, nn.ConvTranspose2d):
-        nn.init.kaiming_uniform_(m.weight.data)
+        nn.init.kaiming_normal_(m.weight.data)
         nn.init.constant_(m.bias.data, 0.0)
     elif isinstance(m,nn.BatchNorm2d):
         nn.init.constant_(m.weight.data, 1.0)
@@ -54,11 +54,11 @@ def main(opt):
     torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
   
-    device=torch.device("cuda:0" if use_gpu else "cpu")
+    device=torch.device("cuda:1" if use_gpu else "cpu")
     
-    base_path="/home/toytiny/Desktop/RadarNet2/train_result/"
+    base_path="/home/fangqiang/radarnet/train_result/"
     
-    data_path='/home/toytiny/Desktop/RadarNet/data/nuscenes/'
+    data_path='/home/fangqiang/data/nuscenes/'
     
     loss_path=base_path+"loss.txt"
     model_path=base_path+"model/"
@@ -72,7 +72,7 @@ def main(opt):
         
         print('Creating model...')
     
-        BBNet=Backbone(38).to(device)
+        BBNet=Backbone(102).to(device)
         BBNet.apply(weights_init)
         Header_car=Header().to(device) 
         Header_car.apply(weights_init)
@@ -93,8 +93,8 @@ def main(opt):
         
         print('Loading checkpoint model '+model_check)
         
-        load_model=torch.load(model_path+model_check,map_location='cuda:0')
-        BBNet=Backbone(38).to(device)
+        load_model=torch.load(model_path+model_check,map_location='cuda:1')
+        BBNet=Backbone(102).to(device)
         BBNet.load_state_dict(load_model["backbone"])
         Header_car=Header().to(device) 
         Header_car.load_state_dict(load_model["header"])
@@ -104,8 +104,8 @@ def main(opt):
     
     print('Creating Optimizer...')
     
-    optimizer_b = optim.Adam(BBNet.parameters(), lr=1e-10)
-    optimizer_hc= optim.Adam(Header_car.parameters(), lr=1e-10)
+    optimizer_b = optim.Adam(BBNet.parameters(), lr=1e-2)
+    optimizer_hc= optim.Adam(Header_car.parameters(), lr=1e-2)
  
     scheduler_b = torch.optim.lr_scheduler.StepLR(optimizer_b,step_size=5,gamma=0.8)
     scheduler_hc = torch.optim.lr_scheduler.StepLR(optimizer_hc,step_size=5,gamma=0.8)
@@ -128,16 +128,16 @@ def main(opt):
     
     print('Setting up validation data...')
     val_loader = torch.utils.data.DataLoader(
-            nuScenes(opt, opt.val_split, data_path), batch_size=1, 
-            shuffle=False, num_workers=0, 
+            nuScenes(opt, opt.train_split, data_path), batch_size=1, 
+            shuffle=False, num_workers=8, 
             pin_memory=True,drop_last=True)
     
     train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=0, 
+            shuffle=True, num_workers=8, 
             pin_memory=True, drop_last=True)
   
-    batch_size=2;
+    batch_size=1;
     ite_epoch=np.floor(len(train_loader)/batch_size)
     
     iter_ind=(st_epoch-1)*ite_epoch
@@ -153,11 +153,16 @@ def main(opt):
         # Training phase
         print('Starting training for epoch-{}'.format(epoch))
         
+
+        
         print('Setting up train data...')
         train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=0, 
+            shuffle=True, num_workers=8, 
             pin_memory=True, drop_last=True)
+        
+        
+        
         
         num_iters = len(train_loader)*opt.num_epochs/batch_size 
         loss_epoch=torch.zeros(1).to(device)
@@ -166,9 +171,12 @@ def main(opt):
         
         BBNet.train()
         Header_car.train()
-    
+        
+        # begin_time=time()
+       
         for ind, (gt,voxel,_) in enumerate(train_loader):
             
+         
             # whether to initilizate the iteration
             if ind%batch_size==0:
                 
@@ -179,7 +187,7 @@ def main(opt):
                 train_ap=torch.zeros(1).to(device)
                 
                 print('Starting iter-{} in epoch {}'.format(int(iter_ind),epoch))
-             
+            # begin_time=time()
             input_voxels=torch.cat([input_voxels,voxel],dim=0)
             gt_cars.append(gt.reshape((gt.size()[1],gt.size()[2])))
             
@@ -189,9 +197,12 @@ def main(opt):
             
             else:
                 
+                # end_time=time()
+                # runtime=end_time-begin_time
+                # print('The time for data load is', runtime)
                 # Through the network
                 input_voxels = input_voxels.float().to(device)
-            
+               
         
                 backbones=BBNet(input_voxels)
                 
@@ -201,6 +212,7 @@ def main(opt):
                         
                     raise ValueError("backbone element is nan or inf")
                     
+                
                 cls_cars, reg_cars=Header_car(backbones)
                 if torch.any(torch.isnan(reg_cars)):
                     raise ValueError("reg element is nan or inf")
@@ -231,7 +243,7 @@ def main(opt):
                     
                     with torch.no_grad():
                         
-                        car_output=NMS(car_det,0.05,50)
+                        car_output=NMS(car_det,0.05,200)
                 
                         AP=evaluate_result(car_output,gt_car,device)
                     
@@ -263,7 +275,8 @@ def main(opt):
                 
                 
                 loss_all.backward()
-                    
+               
+                
                 #nn.utils.clip_grad_norm_(BBNet.parameters(), max_norm=2, norm_type=2)
                 #nn.utils.clip_grad_norm_(Header_car.parameters(), max_norm=2, norm_type=2)
                 #nn.utils.clip_grad_norm_(MLPNet.parameters(), max_norm=2, norm_type=2) 
@@ -278,7 +291,7 @@ def main(opt):
                    
         ap_epoch=ap_epoch/ite_epoch
         loss_epoch=loss_epoch/ite_epoch
-        e_ap='The AP of epoch-{} is {}'.format(epoch,ap_epoch.item())
+        e_ap='The AP of epoch-{} is {}'.format(epoch,ap_epoch.item())+'\n'
         e_loss='The loss of epoch-{} is {}'.format(epoch,loss_epoch.item())+'\n'
         print(e_ap)
         print(e_loss)
@@ -317,43 +330,43 @@ def main(opt):
         reg_cars=torch.Tensor([])
         voxel=torch.Tensor([])
         
-        with torch.no_grad():
+        # with torch.no_grad():
             
-            aver_ap=torch.zeros(1).to(device)
+        #     aver_ap=torch.zeros(1).to(device)
             
-            for ind, (gt_car,input_voxel) in enumerate(val_loader):
+        #     for ind, (gt_car,input_voxel,_) in enumerate(val_loader):
                 
-                if gt_car.size()[1]>0:
-                    gt_car=Variable(gt_car.reshape((gt_car.size()[1],gt_car.size()[2]))).to(device)
-                else:
-                    continue
+        #         if gt_car.size()[1]>0:
+        #             gt_car=Variable(gt_car.reshape((gt_car.size()[1],gt_car.size()[2]))).to(device)
+        #         else:
+        #             continue
             
-                input_voxel = input_voxel.float() 
+        #         input_voxel = input_voxel.float() 
    
-                input_voxel = input_voxel.to(device)
+        #         input_voxel = input_voxel.to(device)
                 
-                backbone=BBNet(input_voxel)
+        #         backbone=BBNet(input_voxel)
                 
-                cls_car, reg_car = Header_car(backbone)
-                # cls_moc, reg_moc = Header_moc(backbone)
+        #         cls_car, reg_car = Header_car(backbone)
+        #         # cls_moc, reg_moc = Header_moc(backbone)
 
-                # process the output from network
-                car_det= output_process(cls_car,reg_car,device,batch_size)
-                car_det=car_det.reshape((car_det.size()[1],car_det.size()[2])).t()
-                car_output=NMS(car_det,0.1,200)
+        #         # process the output from network
+        #         car_det= output_process(cls_car,reg_car,device,batch_size)
+        #         car_det=car_det.reshape((car_det.size()[1],car_det.size()[2])).t()
+        #         car_output=NMS(car_det,0.1,200)
                 
-                AP=evaluate_result(car_output,gt_car,device)
+        #         AP=evaluate_result(car_output,gt_car,device)
                 
-                #print('current sample AP: {}'.format(AP))
+        #         #print('current sample AP: {}'.format(AP))
                 
-                aver_ap+=AP
+        #         aver_ap+=AP
             
-            aver_ap=aver_ap/len(val_loader)
+        #     aver_ap=aver_ap/len(val_loader)
             
-            eval_msg='Epoch-{} Average Precision: {}\n'.format(epoch,aver_ap.item())
-            print(eval_msg)
-            with open(loss_path,'a') as f:
-                f.write(eval_msg)
+        #     eval_msg='Epoch-{} Average Precision: {}\n'.format(epoch,aver_ap.item())
+        #     print(eval_msg)
+        #     with open(loss_path,'a') as f:
+        #         f.write(eval_msg)
                 
 
 if __name__ == '__main__':

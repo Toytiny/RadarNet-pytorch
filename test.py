@@ -37,13 +37,14 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
 
 
-def draw_box(img,draw,res):
+def draw_box(img,draw,res,color):
     
 
     x=res[0]
     y=res[1]
-    length=res[3]
-    width=res[2]
+    length=res[2]
+    width=res[3]
+    # along the x-axis, anticlockwise direction;
     angle=-res[4]
 
     cosA = math.cos(angle)
@@ -74,10 +75,10 @@ def draw_box(img,draw,res):
     y3n = (x3-x)*sinA + (y3 - y)*cosA + y
 
 
-    draw.line([(x0n, y0n),(x1n, y1n)], fill=(255, 0, 0),width=2)
-    draw.line([(x1n, y1n),(x2n, y2n)], fill=(255, 0, 0),width=2)
-    draw.line([(x2n, y2n),(x3n, y3n)],fill= (255,0,0),width=2)
-    draw.line([(x0n, y0n), (x3n, y3n)],fill=(255,0,0),width=2)
+    draw.line([(x0n, y0n),(x1n, y1n)], fill=color,width=2)
+    draw.line([(x1n, y1n),(x2n, y2n)], fill=color,width=2)
+    draw.line([(x2n, y2n),(x3n, y3n)],fill= color,width=2)
+    draw.line([(x0n, y0n), (x3n, y3n)],fill=color,width=2)
 
     #plt.imshow(img)
     #plt.show()
@@ -87,19 +88,20 @@ def draw_box(img,draw,res):
 
 def test(opt):
     
-    torch.cuda.manual_seed(opt.seed)
+    #torch.cuda.manual_seed(opt.seed)
     torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
   
-    device=torch.device("cuda:0" if use_gpu else "cpu")
+    device=torch.device("cuda:1" if use_gpu else "cpu")
     
-    base_path="/home/toytiny/Desktop/RadarNet2/train_result/"
+    base_path="/home/fangqiang/radarnet/train_result/"
     
-    data_path='/home/toytiny/Desktop/RadarNet/data/nuscenes/'
+    data_path='/home/fangqiang/data/nuscenes/'
     
     test_path=base_path+"test.txt"
     
     with open(test_path, 'w') as f:
+        
         f.write('This file records the test results\n')
         
         
@@ -109,7 +111,7 @@ def test(opt):
     
     visualization=True
     
-    fig_path='/home/toytiny/Desktop/RadarNet2/figures/mini_val/'
+    fig_path='/home/toytiny/Desktop/RadarNet2/figures/mini_train/'
     
     res_path='/home/toytiny/Desktop/RadarNet2/res_figures/'
     if not os.path.exists(res_path):
@@ -120,7 +122,7 @@ def test(opt):
     print('Loading checkpoint model '+model_check,'for test')
         
     load_model=torch.load(model_path+model_check,map_location='cuda:0')
-    BBNet=Backbone(38).to(device)
+    BBNet=Backbone(102).to(device)
     BBNet.load_state_dict(load_model["backbone"])
     Header_car=Header().to(device) 
     Header_car.load_state_dict(load_model["header"])
@@ -129,11 +131,11 @@ def test(opt):
     Header_car.eval()
     print('Setting up testing data...')
     test_loader = torch.utils.data.DataLoader(
-            nuScenes(opt, opt.test_split, data_path), batch_size=1, 
+            nuScenes(opt, opt.train_split, data_path), batch_size=1, 
             shuffle=True, num_workers=0, 
             pin_memory=True,drop_last=True)
     
-    batch_size=2;
+    batch_size=4;
     iter_ind=0
     aver_ap=torch.zeros(1).to(device)
     iter_test=np.floor(len(test_loader)/batch_size)
@@ -142,7 +144,7 @@ def test(opt):
     
     nms_thres=[0.05]
   
-    max_keep=[50]
+    max_keep=[200]
   
     for i in range(0,len(nms_thres)):
         for j in range(0,len(max_keep)):
@@ -163,12 +165,12 @@ def test(opt):
                         gt_cars=[]
                         iter_ind+=1
                         test_ap=torch.zeros(1).to(device)
-                            
+                        filenames=[]
                         print('Starting iter-{} for testing'.format(int(iter_ind)))
                          
                     input_voxels=torch.cat([input_voxels,voxel],dim=0)
                     gt_cars.append(gt.reshape((gt.size()[1],gt.size()[2])))
-                        
+                    filenames.append(filename)
                         # whether to continue
                     if not (ind+1)%batch_size==0:
                         continue
@@ -192,6 +194,7 @@ def test(opt):
                             
                             if visualization:
                                 
+                                filename=filenames[k]
                                 bev_name='bev'+filename[0][4:-5]+'.jpg'
                                 bev_path=fig_path+bev_name
                                 save_path=res_path+bev_name
@@ -207,7 +210,11 @@ def test(opt):
                                 
                                 for i in range(0,gt_all.size()[0]):
                                     
-                                     draw_box(img,draw,gt_all[i,:].numpy())
+                                     draw_box(img,draw,gt_all[i,:].numpy(),(0,255,0))
+                                     
+                                for j in range(0,pre_all.size()[0]):
+                                    
+                                     draw_box(img,draw,pre_all[j,1:].numpy(),(255,0,0))
                                      
                                 img.save(save_path)    
                                     

@@ -9,21 +9,47 @@ Created on Mon Jun 21 16:23:31 2021
 import tqdm
 import torch
 import numpy as np
+import cv2
 
 
 def evaluate_result(output,gt,device):
     
+    use_iou=True
     num_pre=output.size()[0]
+    n_gt=gt.size()[0]
     
     tp=[]
     
-    for j in range(0,num_pre):
-        
-        dis=torch.sqrt(torch.pow(output[j,1]-gt[:,0],2)+torch.pow(output[j,2]-gt[:,1],2))
-        if torch.any(dis<16):
-            tp.append(1)
-        else:
-            tp.append(0)
+    if use_iou:
+        for j in range(0,num_pre):
+            inter_max=0
+            for i in range(0,n_gt):
+                tarea=gt[i,2]*gt[i,3]
+                area=output[j,3]*output[j,4]
+                rect1=((output[j,1], output[j,2]), (output[j,3], output[j,4]), output[j,5]*180/3.14)
+                rect2=((gt[i,0],gt[i,1]),(gt[i,2], gt[i,3]),gt[i,4]*180/3.14)
+                int_pts=cv2.rotatedRectangleIntersection(rect1,rect2)[1]
+                if int_pts is not None:
+                    order_pts = cv2.convexHull(int_pts, returnPoints=True)
+                    int_area  = cv2.contourArea(order_pts)
+                    inter     = int_area * 1.0 / (tarea + area - int_area + 1e-10)  # compute IoU
+                else:
+                    inter = 0
+                if inter>inter_max:
+                    inter_max=inter
+            if inter_max>0.5:
+                tp.append(1)
+            else:
+                tp.append(0)    
+    else:        
+                                                   
+        for j in range(0,num_pre):
+            
+            dis=torch.sqrt(torch.pow(output[j,1]-gt[:,0],2)+torch.pow(output[j,2]-gt[:,1],2))
+            if torch.any(dis<16):
+                tp.append(1)
+            else:
+                tp.append(0)
             
     conf=output[:,0].cpu().numpy().tolist()
     
@@ -31,7 +57,7 @@ def evaluate_result(output,gt,device):
     
     p,r= [], []
     
-    n_gt=gt.size()[0]
+    
     
     
     fpc = (1-np.array(tp)).cumsum()

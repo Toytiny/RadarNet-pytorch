@@ -42,7 +42,7 @@ def matching_boxes(anchor_points,gt_boxes,device):
             inter=bb_overlap(bb_anchor[ind,:],bb_gt)
             
    
-            if inter>0.5: # IoU>0.5
+            if inter>0.6: # IoU>0.5
                 match_labels[ind,j]=1
                 #print(inter,j)
             if inter<0.2: # IoU<0.1
