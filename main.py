@@ -52,6 +52,7 @@ def main(opt):
     
     #torch.manual_seed(opt.seed)
     num_chan=102
+    batch_size=4;
     torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
   
@@ -138,7 +139,7 @@ def main(opt):
             shuffle=True, num_workers=0, 
             pin_memory=True, drop_last=True)
   
-    batch_size=4;
+   
     ite_epoch=np.floor(len(train_loader)/batch_size)
     
     iter_ind=(st_epoch-1)*ite_epoch
