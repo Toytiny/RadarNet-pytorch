@@ -26,10 +26,10 @@ from pointcloud import LidarPointCloud2 as LidarPointCloud
 from pointcloud import RadarPointCloud2 as RadarPointCloud
 
 LIDAR_LIST=['LIDAR_TOP']
-DATA_PATH = '/home/fangqiang/data/nuscenes/'
+DATA_PATH = '/home/toytiny/Desktop/RadarNet/data/nuscenes/'
 SPLITS = {
           'mini_val': 'v1.0-mini',
-          'mini_train': 'v1.0-mini',
+          #'mini_train': 'v1.0-mini',
           #'train': 'v1.0-trainval',
           #'val': 'v1.0-trainval',
           #'test': 'v1.0-test',

@@ -92,16 +92,15 @@ def test(opt):
     torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
   
-    device=torch.device("cuda:1" if use_gpu else "cpu")
+    device=torch.device("cuda:0" if use_gpu else "cpu")
     
-    base_path="/home/fangqiang/radarnet/train_result/"
+    base_path="/home/toytiny/Desktop/RadarNet2/train_result/"
     
-    data_path='/home/fangqiang/data/nuscenes/'
+    data_path='/home/toytiny/Desktop/RadarNet/data/nuscenes/'
     
     test_path=base_path+"test.txt"
     
     with open(test_path, 'w') as f:
-        
         f.write('This file records the test results\n')
         
         
@@ -111,7 +110,7 @@ def test(opt):
     
     visualization=True
     
-    fig_path='/home/toytiny/Desktop/RadarNet2/figures/mini_train/'
+    fig_path='/home/toytiny/Desktop/RadarNet2/figures/mini_val/'
     
     res_path='/home/toytiny/Desktop/RadarNet2/res_figures/'
     if not os.path.exists(res_path):
@@ -122,17 +121,17 @@ def test(opt):
     print('Loading checkpoint model '+model_check,'for test')
         
     load_model=torch.load(model_path+model_check,map_location='cuda:0')
-    BBNet=Backbone(102).to(device)
-    BBNet.load_state_dict(load_model["backbone"])
-    Header_car=Header().to(device) 
-    Header_car.load_state_dict(load_model["header"])
+    #BBNet=Backbone(102).to(device)
+    BBNet=load_model["backbone"]
+    #Header_car=Header().to(device) 
+    Header_car=load_model["header"]
 
     BBNet.eval()
     Header_car.eval()
     print('Setting up testing data...')
     test_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=0, 
+            shuffle=True, num_workers=1, 
             pin_memory=True,drop_last=True)
     
     batch_size=4;

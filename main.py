@@ -51,19 +51,20 @@ def weights_init(m):
 def main(opt):
     
     #torch.manual_seed(opt.seed)
+    num_chan=102
     torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
   
-    device=torch.device("cuda:1" if use_gpu else "cpu")
+    device=torch.device("cuda:0" if use_gpu else "cpu")
     
-    base_path="/home/fangqiang/radarnet/train_result/"
+    base_path="/home/toytiny/Desktop/RadarNet2/train_result/"
     
-    data_path='/home/fangqiang/data/nuscenes/'
+    data_path='/home/toytiny/Desktop/RadarNet/data/nuscenes/'
     
     loss_path=base_path+"loss.txt"
     model_path=base_path+"model/"
     
-    load_checkpoint=True
+    load_checkpoint=False
     
   
         
@@ -72,7 +73,7 @@ def main(opt):
         
         print('Creating model...')
     
-        BBNet=Backbone(102).to(device)
+        BBNet=Backbone(num_chan).to(device)
         BBNet.apply(weights_init)
         Header_car=Header().to(device) 
         Header_car.apply(weights_init)
@@ -93,7 +94,7 @@ def main(opt):
         
         print('Loading checkpoint model '+model_check)
         
-        load_model=torch.load(model_path+model_check,map_location='cuda:1')
+        load_model=torch.load(model_path+model_check,map_location='cuda:0')
         BBNet=Backbone(102).to(device)
         BBNet.load_state_dict(load_model["backbone"])
         Header_car=Header().to(device) 
@@ -129,15 +130,15 @@ def main(opt):
     print('Setting up validation data...')
     val_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=False, num_workers=8, 
+            shuffle=False, num_workers=0, 
             pin_memory=True,drop_last=True)
     
     train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=8, 
+            shuffle=True, num_workers=0, 
             pin_memory=True, drop_last=True)
   
-    batch_size=1;
+    batch_size=4;
     ite_epoch=np.floor(len(train_loader)/batch_size)
     
     iter_ind=(st_epoch-1)*ite_epoch
@@ -158,7 +159,7 @@ def main(opt):
         print('Setting up train data...')
         train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=8, 
+            shuffle=True, num_workers=2, 
             pin_memory=True, drop_last=True)
         
         
@@ -291,7 +292,7 @@ def main(opt):
                    
         ap_epoch=ap_epoch/ite_epoch
         loss_epoch=loss_epoch/ite_epoch
-        e_ap='The AP of epoch-{} is {}'.format(epoch,ap_epoch.item())+'\n'
+        e_ap='The AP of epoch-{} is {}'.format(epoch,ap_epoch.item())
         e_loss='The loss of epoch-{} is {}'.format(epoch,loss_epoch.item())+'\n'
         print(e_ap)
         print(e_loss)

@@ -91,9 +91,7 @@ def NMS(det,iou_threshold,max_detection):
     boxes=boxes[indices[:max_detection]]
     scores=scores[:max_detection]
     
-    p=torch.where(scores>0.1)[0]
-    scores=scores[p]
-    boxes=boxes[p]
+    # scores=scores[torch.where(scores>0.3)[0]]
     #pos = 0             # a position index
 
     #N = max_detection  # number of input bounding boxes
