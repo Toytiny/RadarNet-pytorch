@@ -4,15 +4,17 @@ import os
 import json
 import ujson
 import numpy as np
-
+from concurrent import futures
 import copy
-import time
+from time import *
+from joblib import Parallel, delayed
+import multiprocessing
 import sys
-
+import concurrent.futures
 if '/opt/ros/kinetic/lib/python2.7/dist-packages' in sys.path:
     sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
 import matplotlib.pyplot as plt
-import time
+
 import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -53,7 +55,7 @@ USED_SENSOR=['LIDAR_TOP', 'RADAR_FRONT', 'RADAR_FRONT_LEFT',
 CATS = ['car', 'truck', 'bus', 'trailer', 'construction_vehicle', 
         'pedestrian', 'motorcycle', 'bicycle', 'traffic_cone', 'barrier']
 CAT_IDS = {v: i + 1 for i, v in enumerate(CATS)}
-NUM_SWEEPS_LIDAR = 3
+NUM_SWEEPS_LIDAR = 1
 NUM_SWEEPS_RADAR = 6
 
 #suffix1 = '_{}sweeps'.format(NUM_SWEEPS) if NUM_SWEEPS > 1 else ''
@@ -75,6 +77,9 @@ res_wl = 0.15625
 num_features=int((height_range[1]-height_range[0])/res_height);
 num_x=int((fwd_range[1]-fwd_range[0])/res_wl);
 num_y=int((side_range[1]-side_range[0])/res_wl);
+
+
+                        
 def voxel_generate_lidar(points,side_range,fwd_range, height_range, res_wl, res_height):
     
     num_features=int((height_range[1]-height_range[0])/res_height);
@@ -82,27 +87,41 @@ def voxel_generate_lidar(points,side_range,fwd_range, height_range, res_wl, res_
     num_y=int((side_range[1]-side_range[0])/res_wl);
 
     feature_list=[]
-    for i in range(0,num_features):
-        current_height_range=(height_range[0]+i*res_height,height_range[0]+(i+1)*res_height)
-        x_points = points[0,:]
-        y_points = points[1,:]
-        z_points = points[2,:]
-            
-     
     
+    x_points = points[0,:]
+    y_points = points[1,:]
+    z_points = points[2,:]
+    
+    f_filt = np.logical_and((x_points > fwd_range[0]), (x_points < fwd_range[1]))
+    s_filt = np.logical_and((y_points > side_range[0]), (y_points < side_range[1]))
+    h_filt = np.logical_and((z_points > height_range[0]), (z_points < height_range[1]))
+    filt = np.logical_and(np.logical_and(f_filt, s_filt),h_filt)
+    indices = np.argwhere(filt).flatten()
+    points=points[:,indices]
+    
+    # Parallel(n_jobs=2)(delayed(extract_one_layer)(i) for i in range(0,num_features))
+    for i in range(0,num_features):
+      
+        current_height_range=(height_range[0]+i*res_height,height_range[0]+(i+1)*res_height)
+       
         # FILTER - To return only indices of points within desired cube
         # Three filters for: Front-to-back, side-to-side, and height ranges
         # Note left side is positive y axis car coordinates
         
-        f_filt = np.logical_and((x_points > fwd_range[0]), (x_points < fwd_range[1]))
-        s_filt = np.logical_and((y_points > side_range[0]), (y_points < side_range[1]))
+        x_points = points[0,:]
+        y_points = points[1,:]
+        z_points = points[2,:]
+        
         h_filt = np.logical_and((z_points > current_height_range[0]), (z_points < current_height_range[1]))
-        filt = np.logical_and(np.logical_and(f_filt, s_filt),h_filt)
         
-        #if not any(filt):
-        #    continue
         
-        indices = np.argwhere(filt).flatten()
+        if not any(h_filt):
+            feature= np.zeros([num_y, num_x],dtype=np.float16)
+            feature=feature.tolist()
+            feature_list.append(feature)
+            continue
+        
+        indices = np.argwhere(h_filt).flatten()
 
         # KEEPERS
         x_points = x_points[indices]
@@ -119,6 +138,7 @@ def voxel_generate_lidar(points,side_range,fwd_range, height_range, res_wl, res_
         
         # calculate the value for each voxel in the feature
         for j in range(0,num_x):
+            
             x_filt=np.logical_and((x_img > j*res_wl), (x_img < (j+1)*res_wl))
             if not any(x_filt):
                 feature[:,j]=0
@@ -145,9 +165,12 @@ def voxel_generate_lidar(points,side_range,fwd_range, height_range, res_wl, res_
                     v_x=(j+1/2)*res_wl
                     v_y=(k+1/2)*res_wl
                     v_z=(i+1/2)*res_height+height_range[0]
-                    for n in range(0,len(x_img_v)):
-                        feature[k,j]+=(1-abs(x_img_v[n]-v_x)/(res_wl/2))* \
-                        (1-abs(y_img_v[n]-v_y)/(res_wl/2))*(1-abs(z_img_v[n]-v_z)/(res_height/2))
+                    feature[k,j]+=np.sum((1-abs(x_img_v-v_x)/(res_wl/2))* \
+                        (1-abs(y_img_v-v_y)/(res_wl/2))*(1-abs(z_img_v-v_z)/(res_height/2)))
+                    # for n in range(0,len(x_img_v)):
+                    
+                    #     feature[k,j]+=(1-abs(x_img_v[n]-v_x)/(res_wl/2))* \
+                    #     (1-abs(y_img_v[n]-v_y)/(res_wl/2))*(1-abs(z_img_v[n]-v_z)/(res_height/2))
                         
         feature=feature.astype(np.float16)
         feature=feature.tolist()
@@ -289,7 +312,8 @@ def get_radar_target(points,times, side_range,fwd_range,height_range,res_wl):
     return targets   
         
    
-    
+def point_exist_in_box(box,pcs): 
+     return True
    
     
 
@@ -334,7 +358,7 @@ def main():
       pc_token = sample['data'][LIDAR_LIST[0]]
       pc_data = nusc.get('sample_data', pc_token)
       num_pcs += 1
-      out_path_current=out_path_pc+'/'+'voxel_scenes-{}_pcs-{}.json'.format(num_scenes,num_pcs)
+      out_path_current=out_path_pc+'/'+'voxel_scenes-{}_pcs-{}'.format(num_scenes,num_pcs)
       out_path_annos=out_path_an+'/'+'anno_scenes-{}_pcs-{}.json'.format(num_scenes,num_pcs)
       if os.path.exists(out_path_current) and os.path.exists(out_path_annos):
            continue
@@ -363,8 +387,11 @@ def main():
                                    np.ones(lidar_pcs[i].shape[1]))))[:3, :]
         #     # Extract voxel presentations for a timestamp
             print('Extracting voxel representation for lidar sweep:', i+1) 
+            begin_time=time()
             voxel_lidar.append(voxel_generate_lidar(lidar_pcs[i],side_range,fwd_range,height_range,res_wl,res_height))
-          
+            end_time=time()
+            runtime=end_time-begin_time
+            print(runtime)
           
    
       radar_pcs=[list([]) for i in range(0,NUM_SWEEPS_RADAR)]
@@ -396,14 +423,37 @@ def main():
           radar_target=np.hstack((radar_target, get_radar_target(radar_pcs[i], radar_times[i], 
                                                                   side_range,fwd_range,height_range,res_wl)))
       #point cloud information 
-      pc_input = {'id': num_pcs,
-                   'scene_id': num_scenes,
-                   'scene_name': scene_name,
-                   'radar_feat': voxel_radar, 
-                   'lidar_feat': voxel_lidar,
-                   'radar_target': radar_target.tolist(),
-                   'timestap': sample['timestamp']/1e6,
-                   }
+      h_layers=int((height_range[1]-height_range[0])/res_height)
+      num_chan=int(NUM_SWEEPS_RADAR+NUM_SWEEPS_LIDAR*h_layers)
+      out_path_dir=out_path_pc+'/'+'voxel_scenes-{}_pcs-{}'.format(num_scenes,num_pcs)+'/'
+      if not os.path.exists(out_path_dir):
+        os.makedirs(out_path_dir)
+      chan=0
+      
+      for ch in range(0,NUM_SWEEPS_RADAR):
+         
+          curr_img=np.array(voxel_radar[ch])
+          curr_img=np.array(curr_img*127+128,dtype='uint8')# map [-1 1] to [1 255]
+          curr_img_path=out_path_dir+'{}.jpg'.format(ch)
+          cv2.imwrite(curr_img_path,curr_img)
+          chan+=1
+          # save the lidar data then
+      for lid in range(0,NUM_SWEEPS_LIDAR):
+          
+          for lay in range(0,h_layers):
+              curr_img=np.array(voxel_lidar[lid][lay])
+              curr_img=np.array(curr_img*30,dtype='uint8')
+              curr_img_path=out_path_dir+'{}.jpg'.format(chan)
+              cv2.imwrite(curr_img_path,curr_img)
+              chan+=1
+      # pc_input = {'id': num_pcs,
+      #              'scene_id': num_scenes,
+      #              'scene_name': scene_name,
+      #              'radar_feat': voxel_radar, 
+      #              'lidar_feat': voxel_lidar,
+      #              'radar_target': radar_target.tolist(),
+      #              'timestap': sample['timestamp']/1e6,
+      #              }
       radar_voxel_channel=len(voxel_radar)
       lidar_voxel_channel=len(voxel_lidar)
       print('Save {} voxel for {} sample in {} scene'.format(
@@ -413,7 +463,7 @@ def main():
       
 
       
-      ujson.dump(pc_input, open(out_path_current, 'w'))
+      # ujson.dump(pc_input, open(out_path_current, 'w'))
       
       
       
@@ -433,12 +483,20 @@ def main():
           s_filt = np.logical_and(((box.center[1]-box.wlh[1]/2)>-side_range[1]),((box.center[1]+box.wlh[1]/2)<-side_range[0]))
           h_filt = np.logical_and(((box.center[2]-box.wlh[2]/2)>height_range[0]),((box.center[2]+box.wlh[2]/2)<height_range[1]))
           filt = np.logical_and(np.logical_and(f_filt, s_filt),h_filt)
+          
+    
           if filt:
               boxes_in.append(box)
-    
+      
+      boxes_all=[]
+      for box in boxes_in:
+         exist_point=point_exist_in_box(box,lidar_pcs)
+         if exist_point:
+             boxes_all.append(box)
+             
           
               
-      for box in boxes_in:
+      for box in boxes_all:
           # Map the catergory to detection name
           det_name = category_to_detection_name(box.name)
           if det_name is None:
@@ -615,13 +673,19 @@ SCENE_SPLITS = {
      'scene-1060', 'scene-1061', 'scene-1062', 'scene-1063', 'scene-1064', 'scene-1065', 'scene-1066', 'scene-1067',
      'scene-1068', 'scene-1069', 'scene-1070', 'scene-1071', 'scene-1072', 'scene-1073'],
 'mini_train':
-    ['scene-0061'],
+    ['scene-0061', 'scene-0553', 'scene-0655', 'scene-0757', 'scene-0796', 'scene-1077', 'scene-1094', 'scene-1100'],
 'mini_val':
     ['scene-0103', 'scene-0916'],    
 }
     
 if __name__ == '__main__':
-  main()    
+  # with concurrent.futures.ProcessPoolExecutor() as executor:
+  #     executor.map(main())
+  #main()
+  #executor = futures.ThreadPoolExecutor(max_workers=3)
+  #executor.map(main())
+  main()
+    
     
     
     

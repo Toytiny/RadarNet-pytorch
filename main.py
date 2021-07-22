@@ -51,7 +51,7 @@ def weights_init(m):
 def main(opt):
     
     #torch.manual_seed(opt.seed)
-    num_chan=102
+    num_chan=38
     batch_size=4;
     torch.backends.cudnn.benchmark = True
     use_gpu = torch.cuda.is_available()
@@ -96,7 +96,7 @@ def main(opt):
         print('Loading checkpoint model '+model_check)
         
         load_model=torch.load(model_path+model_check,map_location='cuda:0')
-        BBNet=Backbone(102).to(device)
+        BBNet=Backbone(num_chan).to(device)
         BBNet.load_state_dict(load_model["backbone"])
         Header_car=Header().to(device) 
         Header_car.load_state_dict(load_model["header"])
@@ -131,12 +131,12 @@ def main(opt):
     print('Setting up validation data...')
     val_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=False, num_workers=0, 
+            shuffle=False, num_workers=8, 
             pin_memory=True,drop_last=True)
     
     train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=0, 
+            shuffle=True, num_workers=8, 
             pin_memory=True, drop_last=True)
   
    
@@ -160,7 +160,7 @@ def main(opt):
         print('Setting up train data...')
         train_loader = torch.utils.data.DataLoader(
             nuScenes(opt, opt.train_split, data_path), batch_size=1, 
-            shuffle=True, num_workers=2, 
+            shuffle=True, num_workers=8, 
             pin_memory=True, drop_last=True)
         
         
@@ -175,12 +175,14 @@ def main(opt):
         Header_car.train()
         
         # begin_time=time()
-       
+        inde=-1
         for ind, (gt,voxel,_) in enumerate(train_loader):
             
-         
+            if gt.size()[1]==0:
+                continue
+            inde+=1
             # whether to initilizate the iteration
-            if ind%batch_size==0:
+            if inde%batch_size==0:
                 
                 input_voxels=torch.Tensor([])
                 gt_cars=[]
@@ -190,11 +192,12 @@ def main(opt):
                 
                 print('Starting iter-{} in epoch {}'.format(int(iter_ind),epoch))
             # begin_time=time()
+            voxel=voxel.float()
             input_voxels=torch.cat([input_voxels,voxel],dim=0)
             gt_cars.append(gt.reshape((gt.size()[1],gt.size()[2])))
             
             # whether to continue
-            if not (ind+1)%batch_size==0:
+            if not (inde+1)%batch_size==0:
                 continue
             
             else:

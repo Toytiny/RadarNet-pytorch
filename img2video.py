@@ -5,13 +5,13 @@ import cv2
 import os
 
 
-IMG_DIR_1 = '/home/toytiny/Desktop/RadarNet2/res_figures/mini_val/'   
+IMG_DIR_1 = '/home/toytiny/Desktop/RadarNet2/res_figures/'   
 out_path='/home/toytiny/3dd/'
-out_put_video_name = 'bev_val.avi' 
+out_put_video_name = 'bev_val_all.avi' 
 
 IMG_DIR = [IMG_DIR_1]
 file_type = '.jpg'
-fps = 2 # speed*5  
+fps = 6 # speed*5  
 size=(640,640) # 
 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
 

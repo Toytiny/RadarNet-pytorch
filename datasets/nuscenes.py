@@ -43,19 +43,38 @@ class nuScenes(Dataset.Dataset):
   def __getitem__(self, index):
       
     
-    with open(self.voxel_path+self.voxel[index],'r') as f:
-        voxel=ujson.load(f)
+    # with open(self.voxel_path+self.voxel[index],'r') as f:
+    #     voxel=ujson.load(f)
     with open(self.annos_path+self.annos[index],'r') as p:
         annos=ujson.load(p)
     # end_time=time()
     # runtime=end_time-begin_time
     # print('The time for backward is', runtime)
-    radar_voxel=np.asarray(voxel['radar_feat'])
-    input_voxel=radar_voxel
+    # radar_voxel=np.asarray(voxel['radar_feat'])
+    # input_voxel=radar_voxel
     
-    for i in range(0,len(voxel['lidar_feat'])):
-        current_lidar_voxel=np.asarray(voxel['lidar_feat'][i])
-        input_voxel=np.concatenate((input_voxel,current_lidar_voxel),axis=0)
+    # for i in range(0,len(voxel['lidar_feat'])):
+    #     current_lidar_voxel=np.asarray(voxel['lidar_feat'][i])
+    #     input_voxel=np.concatenate((input_voxel,current_lidar_voxel),axis=0)
+    img_list=sorted(os.listdir(self.voxel_path+self.voxel[index]+'/'),key=lambda x:eval(x.split(".")[0]))
+    num_radar_sweeps=6 # default
+    for i in range(0,len(img_list)):
+        if i==0:
+            input_voxel=np.array((cv2.imread(self.voxel_path+self.voxel[index]+'/'+img_list[i],0)-128)/127)
+            input_voxel=input_voxel.reshape((1,np.size(input_voxel,0),np.size(input_voxel,1)))
+        if i>0 and i<num_radar_sweeps:
+            curr_voxel=np.array((cv2.imread(self.voxel_path+self.voxel[index]+'/'+img_list[i],0)-128)/127)
+            curr_voxel=curr_voxel.reshape((1,np.size(curr_voxel,0),np.size(curr_voxel,1)))
+            input_voxel=np.concatenate((input_voxel,curr_voxel),axis=0)
+        if i>=num_radar_sweeps:
+            curr_voxel=np.array(cv2.imread(self.voxel_path+self.voxel[index]+'/'+img_list[i],0)/30)
+            curr_voxel=curr_voxel.reshape((1,np.size(curr_voxel,0),np.size(curr_voxel,1)))
+            input_voxel=np.concatenate((input_voxel,curr_voxel),axis=0)
+            
+
+            
+            
+    
         
     
     # radar_target=voxel['radar_target']
