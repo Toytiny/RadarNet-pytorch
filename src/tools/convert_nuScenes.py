@@ -99,84 +99,115 @@ def voxel_generate_lidar(points,side_range,fwd_range, height_range, res_wl, res_
     indices = np.argwhere(filt).flatten()
     points=points[:,indices]
     
-    # Parallel(n_jobs=2)(delayed(extract_one_layer)(i) for i in range(0,num_features))
-    for i in range(0,num_features):
+    x_points = points[0,:]
+    y_points = points[1,:]
+    z_points = points[2,:]
+    
+    # SHIFT to the BEV view
+    x_img = x_points + fwd_range[1] 
+    y_img = -(y_points + side_range[0])
+    z_img = z_points-height_range[0]
+    
+    # index of points in features
+    z_ind=np.floor((z_img)/res_height)
+    x_ind=np.floor((x_img)/res_wl)
+    y_ind=np.floor((y_img)/res_wl)
+    
+    # center of voxels in features
+    z_c=(z_ind+1/2)*res_wl
+    x_c=(x_ind+1/2)*res_wl
+    y_c=(y_ind+1/2)*res_wl
+    
+    features=np.zeros((num_features,num_y,num_x))
+    
+    for ind in range(np.size(points,1)):
+        
+        features[int(z_ind[ind]),int(y_ind[ind]),int(x_ind[ind])]+=(1-abs(x_img[ind]-x_c[ind]/(res_wl/2)))* \
+            (1-abs(y_img[ind]-y_c[ind]/(res_wl/2)))*(1-abs(z_img[ind]-z_c[ind]/(res_height/2)))
+        
+    
+        
+        
+        
+        
+    # # Parallel(n_jobs=2)(delayed(extract_one_layer)(i) for i in range(0,num_features))
+    # for i in range(0,num_features):
       
-        current_height_range=(height_range[0]+i*res_height,height_range[0]+(i+1)*res_height)
+    #     current_height_range=(height_range[0]+i*res_height,height_range[0]+(i+1)*res_height)
        
-        # FILTER - To return only indices of points within desired cube
-        # Three filters for: Front-to-back, side-to-side, and height ranges
-        # Note left side is positive y axis car coordinates
+    #     # FILTER - To return only indices of points within desired cube
+    #     # Three filters for: Front-to-back, side-to-side, and height ranges
+    #     # Note left side is positive y axis car coordinates
         
-        x_points = points[0,:]
-        y_points = points[1,:]
-        z_points = points[2,:]
+    #     x_points = points[0,:]
+    #     y_points = points[1,:]
+    #     z_points = points[2,:]
         
-        h_filt = np.logical_and((z_points > current_height_range[0]), (z_points < current_height_range[1]))
+    #     h_filt = np.logical_and((z_points > current_height_range[0]), (z_points < current_height_range[1]))
         
         
-        if not any(h_filt):
-            feature= np.zeros([num_y, num_x],dtype=np.float16)
-            feature=feature.tolist()
-            feature_list.append(feature)
-            continue
+    #     if not any(h_filt):
+    #         feature= np.zeros([num_y, num_x],dtype=np.float16)
+    #         feature=feature.tolist()
+    #         feature_list.append(feature)
+    #         continue
         
-        indices = np.argwhere(h_filt).flatten()
+    #     indices = np.argwhere(h_filt).flatten()
 
-        # KEEPERS
-        x_points = x_points[indices]
-        y_points = y_points[indices]
-        z_points = z_points[indices]
+    #     # KEEPERS
+    #     x_points = x_points[indices]
+    #     y_points = y_points[indices]
+    #     z_points = z_points[indices]
    
 
-        # SHIFT to the BEV view
-        x_img = x_points + fwd_range[1] 
-        y_img = -(y_points + side_range[0])
-        z_img = z_points
+    #     # SHIFT to the BEV view
+    #     x_img = x_points + fwd_range[1] 
+    #     y_img = -(y_points + side_range[0])
+    #     z_img = z_points
         
-        feature= np.zeros([num_y, num_x],dtype=np.float16)
+    #     feature= np.zeros([num_y, num_x],dtype=np.float16)
         
-        # calculate the value for each voxel in the feature
-        for j in range(0,num_x):
+    #     # calculate the value for each voxel in the feature
+    #     for j in range(0,num_x):
             
-            x_filt=np.logical_and((x_img > j*res_wl), (x_img < (j+1)*res_wl))
-            if not any(x_filt):
-                feature[:,j]=0
-                continue
-            else:
-                # abandon those points not in this column to save time 
-                indices=np.argwhere(x_filt).flatten()
-                x_img_cl=x_img[indices]
-                y_img_cl=y_img[indices]
-                z_img_cl=z_img[indices]
+    #         x_filt=np.logical_and((x_img > j*res_wl), (x_img < (j+1)*res_wl))
+    #         if not any(x_filt):
+    #             feature[:,j]=0
+    #             continue
+    #         else:
+    #             # abandon those points not in this column to save time 
+    #             indices=np.argwhere(x_filt).flatten()
+    #             x_img_cl=x_img[indices]
+    #             y_img_cl=y_img[indices]
+    #             z_img_cl=z_img[indices]
                 
-            for k in range(0,num_y):
-                y_filt=np.logical_and((y_img_cl > k*res_wl), (y_img_cl < (k+1)*res_wl))
-                if not any(y_filt):
-                    feature[k,j]=0
-                else:
-                    # continue to abandon those not in this row, namely keep points in this voxel
-                    indices=np.argwhere(y_filt).flatten()
-                    x_img_v=x_img_cl[indices]
-                    y_img_v=y_img_cl[indices]
-                    z_img_v=z_img_cl[indices]
+    #         for k in range(0,num_y):
+    #             y_filt=np.logical_and((y_img_cl > k*res_wl), (y_img_cl < (k+1)*res_wl))
+    #             if not any(y_filt):
+    #                 feature[k,j]=0
+    #             else:
+    #                 # continue to abandon those not in this row, namely keep points in this voxel
+    #                 indices=np.argwhere(y_filt).flatten()
+    #                 x_img_v=x_img_cl[indices]
+    #                 y_img_v=y_img_cl[indices]
+    #                 z_img_v=z_img_cl[indices]
             
-                    # get the center of current voxel
-                    v_x=(j+1/2)*res_wl
-                    v_y=(k+1/2)*res_wl
-                    v_z=(i+1/2)*res_height+height_range[0]
-                    feature[k,j]+=np.sum((1-abs(x_img_v-v_x)/(res_wl/2))* \
-                        (1-abs(y_img_v-v_y)/(res_wl/2))*(1-abs(z_img_v-v_z)/(res_height/2)))
-                    # for n in range(0,len(x_img_v)):
+    #                 # get the center of current voxel
+    #                 v_x=(j+1/2)*res_wl
+    #                 v_y=(k+1/2)*res_wl
+    #                 v_z=(i+1/2)*res_height+height_range[0]
+    #                 feature[k,j]+=np.sum((1-abs(x_img_v-v_x)/(res_wl/2))* \
+    #                     (1-abs(y_img_v-v_y)/(res_wl/2))*(1-abs(z_img_v-v_z)/(res_height/2)))
+    #                 # for n in range(0,len(x_img_v)):
                     
-                    #     feature[k,j]+=(1-abs(x_img_v[n]-v_x)/(res_wl/2))* \
-                    #     (1-abs(y_img_v[n]-v_y)/(res_wl/2))*(1-abs(z_img_v[n]-v_z)/(res_height/2))
+    #                 #     feature[k,j]+=(1-abs(x_img_v[n]-v_x)/(res_wl/2))* \
+    #                 #     (1-abs(y_img_v[n]-v_y)/(res_wl/2))*(1-abs(z_img_v[n]-v_z)/(res_height/2))
                         
-        feature=feature.astype(np.float16)
-        feature=feature.tolist()
-        feature_list.append(feature)
+    #     feature=feature.astype(np.float16)
+    #     feature=feature.tolist()
+    #     feature_list.append(feature)
         
-    return feature_list
+    return features.tolist()
 
 def voxel_generate_radar(points,side_range,fwd_range, res_wl):
     
@@ -387,11 +418,11 @@ def main():
                                    np.ones(lidar_pcs[i].shape[1]))))[:3, :]
         #     # Extract voxel presentations for a timestamp
             print('Extracting voxel representation for lidar sweep:', i+1) 
-            begin_time=time()
+            # begin_time=time()
             voxel_lidar.append(voxel_generate_lidar(lidar_pcs[i],side_range,fwd_range,height_range,res_wl,res_height))
-            end_time=time()
-            runtime=end_time-begin_time
-            print(runtime)
+            # end_time=time()
+            # runtime=end_time-begin_time
+            # print(runtime)
           
    
       radar_pcs=[list([]) for i in range(0,NUM_SWEEPS_RADAR)]
@@ -679,12 +710,12 @@ SCENE_SPLITS = {
 }
     
 if __name__ == '__main__':
-  # with concurrent.futures.ProcessPoolExecutor() as executor:
-  #     executor.map(main())
+   with concurrent.futures.ProcessPoolExecutor() as executor:
+       executor.map(main())
   #main()
   #executor = futures.ThreadPoolExecutor(max_workers=3)
   #executor.map(main())
-  main()
+  #main()
     
     
     
