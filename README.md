@@ -46,47 +46,69 @@ NUSCENES_DATASET_ROOT/
 └── v1.0-test/
 ```
 
-I highly recommended you to first test the code on the mini set and formally train the model on the trainval set.
+It is highly recommended to first test the code on the **mini** set before formally training the model on the **trainval** set.
 
-After organizing the dataset, you should first run the .src/tools/convert_nuScenes.py to load and process the data you need. You must modify the data path, and choose the splits you need in the file. The file extracts the voxel representations of lidar and radar, the radar target, as well as the annotations, and save them is the dataset root path. 
-Please note that, the max value of NUM_SWEEPS_LIDAR is 10, while the max value of NUM_SWEEPS_RADAR is 6. These two variables control the number of sweeps of lidar (radar) in a sample. If you want to improve the weight of radar in the detection, you may set the NUM_SWEEPS_LIDAR to 1 (highly-recommended). In the experiments of the original paper, they set 10 and 6 for NUM_SWEEPS_LIDAR and NUM_SWEEPS_RADAR, however, it has a very slow speed. Note that, you may need over 300G space to store all prepared data of the training set. 
+After organizing the dataset, follow these steps:
 
+1. Run the script at `src/tools/convert_nuScenes.py` to load and preprocess the required data.
+   - Modify the dataset path and specify the splits you need in the script.
+   - The script will extract the following:
+     - Voxel representations of lidar and radar
+     - Radar targets
+     - Annotations
+   - The processed data will be saved in the dataset root directory.
 
+2. **Important Parameters**:
+   - `NUM_SWEEPS_LIDAR` (Maximum: 10) and `NUM_SWEEPS_RADAR` (Maximum: 6) control the number of lidar and radar sweeps per sample.
+   - To increase the influence of radar in detection, set `NUM_SWEEPS_LIDAR` to **1** (highly recommended).
+   - In the original paper, these values were set to `10` and `6`, respectively, which significantly slows processing.
 
-## Model training
+3. Ensure you have at least **300 GB** of disk space to store the fully prepared training data.
 
+---
 
+## Model Training
 
-You can train the model with the main.py file. You should first modify the variable num_chan according to how many sweeps of point cloud you use. For example, if your NUM_SWEEPS_LIDAR is 3, and NUM_SWEEPS_RADAR is 6, the num_chan=3*height_range/res_height+6. (height_range and res_height are two values in convert_nuScenes.py)
+You can train the model using the `main.py` file. Follow these steps:
 
-Then you should modify the data_path and the base_path which is the place you save the training result. If you want to resume the training and load the checkpoint to continue the training, please set the load_checkpoint to True. Some variables, like the batch_size, device, learning rate and its decay can be modified in this file. Other variables, like the epoch number, train_split, used in the file can be set in the opts.py file. 
+1. **Modify `num_chan`**:
+   - This depends on the number of point cloud sweeps you use:
+     ```
+     num_chan = (NUM_SWEEPS_LIDAR * height_range / res_height) + NUM_SWEEPS_RADAR
+     ```
+   - `height_range` and `res_height` are defined in `convert_nuScenes.py`.
 
+2. **Set Paths**:
+   - Update `data_path` with the dataset directory.
+   - Update `base_path` with the directory where you want to save training results.
 
+3. **Resume Training**:
+   - To resume training from a checkpoint, set `load_checkpoint = True`.
 
-If you want to validate the model on the validation set after each epoch, please delete the comments in the bottom of the main function.
+4. **Adjust Parameters**:
+   - Variables like `batch_size`, `device`, learning rate, and its decay can be modified in `main.py`.
+   - Epoch numbers, train splits, and other options can be configured in `opts.py`.
 
+5. **Validation**:
+   - To validate the model on the validation set after each epoch, uncomment the relevant lines at the bottom of the main function.
 
+---
 
+## Model Testing
 
+1. Before testing, use `src/tools/visualize_result.py` to save BEV figures of lidar data for visualization.  
+2. Run `test.py` to test the trained model on your dataset.  
+3. Test results and visualizations will be saved in the directory specified by `res_path`.
 
-## Model Test
-
-
-
-Before model test, you should use the ./src/tools/visualize_result.py to the save the bev figures of the lidar data for visualiazation. Then you could run the test.py to test the model you trained on the dataset you need, the visualization of the test results in save in the "res_path".
-
-
+---
 
 ## Data Analysis
 
+1. Use `img2video.py` to convert visualization results into video format.  
+2. Use `plot_loss.py` to generate training loss curves and AP (Average Precision) curves.
 
+---
 
-You could use the img2video.py to convert the visualization results to video. You could also use the plot loss to get the curve of the training loss and AP curve. 
+## Notes
 
-
-
-## Note
-
-
-
-This repository is a rough version for the overall project. If you want to add other functions to it, you can write the code by yourself. 
+This repository provides a rough implementation of the overall project. If you wish to extend its functionality, you are encouraged to implement additional features as needed.
