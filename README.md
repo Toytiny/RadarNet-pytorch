@@ -1,42 +1,40 @@
 # RadarNet Implementation
 
-
-
 ## Introduction
 
+This repository implements a point-cloud-based object detection method called **RadarNet** (ECCV'20). 
 
+**[Paper Link](https://arxiv.org/pdf/2007.14366.pdf)**
 
-This repository implemented a point-cloud-based object detection method called RadarNet (ECCV'20). 
+Please note:
+- This repository reproduces only the object detection functionality from the original paper. The velocity estimation functionality will be added in future updates.
+- Some specific details, such as learning rate, hard sample mining strategies, and sample extraction schemes, are not explicitly mentioned in the original paper. Hence, related works have been referenced to set up these parameters.
 
-Paper Link:  https://arxiv.org/pdf/2007.14366.pdf
+---
 
-Please note that this repository only reproduce the object detection function in the original paper, and the  velocity estimation function will be added in the future. BTW, some specific details, such as the learning rate, hard sample mining strategy, sample extraction scheme, and so on, are not well-illustrated in the original paper, so here I refer to related works for setting up. 
+## Prerequisites
 
+It is highly recommended to create a new environment using **Anaconda3** for this project.
 
+Below is the version information for core libraries used:
 
-## Prerequisite
+| Library  | Version  |
+| -------- | -------- |
+| Python   | 3.7.10   |
+| PyTorch  | 1.7.0    |
+| CUDA     | 11.0     |
 
+> **Note**:  
+> The appropriate CUDA version depends on your GPU. Please ensure you install the correct version of CUDA and cuDNN on your server.  
+> Additional libraries such as `nuscenes-devkit` and `opencv` may also be required when running the code. Install them as needed.
 
-
-I highly recommenced the user to create a new environment using Anaconda3. 
-
-The version of some core libraries I used can be seen in the table below:
-
-| library | version |
-| ------- | ------- |
-| Python  | 3.7.10  |
-| Pytorch | 1.7.0   |
-| CUDA    | 11.0    |
-
- Please note that, the CUDA version depends on your GPU version, please install proper CUDA and cudnn on your server. Other libraries, like nuscenes-devkit and opencv, maybe also needed when running the code, please install them if necessary.
-
-
+---
 
 ## Dataset Preparation
 
-
-
-To train the network on the nuscenes datasets, you should download the data on https://www.nuscenes.org/download. You should organized the data like:
+To train the network on the NuScenes dataset:
+1. Download the dataset from [NuScenes](https://www.nuscenes.org/download).
+2. Organize the dataset as follows:
 
 ```
 NUSCENES_DATASET_ROOT/
@@ -51,7 +49,6 @@ NUSCENES_DATASET_ROOT/
 I highly recommended you to first test the code on the mini set and formally train the model on the trainval set.
 
 After organizing the dataset, you should first run the .src/tools/convert_nuScenes.py to load and process the data you need. You must modify the data path, and choose the splits you need in the file. The file extracts the voxel representations of lidar and radar, the radar target, as well as the annotations, and save them is the dataset root path. 
-
 Please note that, the max value of NUM_SWEEPS_LIDAR is 10, while the max value of NUM_SWEEPS_RADAR is 6. These two variables control the number of sweeps of lidar (radar) in a sample. If you want to improve the weight of radar in the detection, you may set the NUM_SWEEPS_LIDAR to 1 (highly-recommended). In the experiments of the original paper, they set 10 and 6 for NUM_SWEEPS_LIDAR and NUM_SWEEPS_RADAR, however, it has a very slow speed. Note that, you may need over 300G space to store all prepared data of the training set. 
 
 
