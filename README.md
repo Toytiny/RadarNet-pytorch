@@ -39,12 +39,13 @@ The version of some core libraries I used can be seen in the table below:
 To train the network on the nuscenes datasets, you should download the data on https://www.nuscenes.org/download. You should organized the data like:
 
 NUSCENES_DATASET_ROOT/
-│
-├── samples/          # Holds the RGB images and LiDAR data for each frame
-│
-├── sweeps/           # Contains additional sensor sweeps
-│
-├── maps/             # Contains map information (e.g., HD maps)
+├── samples/
+├── sweeps/
+├── maps/
+├── v1.0-mini/
+├── v1.0-trainval/
+└── v1.0-test/
+
 
 I highly recommended you to first test the code on the mini set and formally train the model on the trainval set.
 
